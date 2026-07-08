@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BOH Technician Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg-0:#101114; --bg-1:#191b20; --bg-2:#20232a; --bg-3:#282c34;
+    --line:#33363f; --line-soft:#24262d;
+    --text-1:#eef0f2; --text-2:#9aa0ab; --text-3:#686f7b;
+    --amber:#f2a93b; --amber-strong:#ffc864; --amber-dim:#3a2f1a;
+    --green:#4cae6d; --green-dim:#173625;
+    --red:#e5493f; --red-dim:#3a1917;
+    --blue:#5b9fe0; --blue-dim:#182a3a;
+    --purple:#a48ce0; --purple-dim:#241d38;
+    --gold:#d4af37; --gold-dim:#332c14;
+    --teal:#4fb8c4; --teal-dim:#123032;
+    --slate:#7c93a6; --slate-dim:#1e2830;
+    --dim:#686f7b; --dim-dim:#22242a;
+    --font-display:'Oswald',sans-serif;
+    --font-body:'Inter',system-ui,sans-serif;
+    --font-mono:'JetBrains Mono',monospace;
+    --radius:6px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg-0);color:var(--text-1);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
+  ::selection{background:var(--amber);color:#221a0a;}
+
+  .cue-strip{display:flex;align-items:center;background:var(--bg-1);border-bottom:2px solid var(--amber);padding:0 20px;height:56px;overflow-x:auto;}
+  .cue-item{display:flex;align-items:center;gap:10px;padding:0 20px;height:100%;border-right:1px solid var(--line-soft);white-space:nowrap;flex-shrink:0;}
+  .cue-item:first-child{padding-left:0;}
+  .cue-label{font-family:var(--font-display);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);}
+  .cue-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--text-1);}
+  .clock-value{font-size:20px;color:var(--amber-strong);}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:0.04em;}
+  .pill-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .pill.ok{background:var(--green-dim);color:#8fdaa8;} .pill.ok .pill-dot{background:var(--green);}
+  .pill.warn{background:var(--amber-dim);color:var(--amber-strong);} .pill.warn .pill-dot{background:var(--amber);}
+  .pill.bad{background:var(--red-dim);color:#ff8f88;} .pill.bad .pill-dot{background:var(--red);}
+
+  .tabbar{display:flex;gap:2px;background:var(--bg-1);padding:10px 20px 0;border-bottom:1px solid var(--line);align-items:center;justify-content:space-between;}
+  .tabbar-left{display:flex;gap:2px;}
+  .tab-btn{font-family:var(--font-display);font-size:15px;text-transform:uppercase;letter-spacing:0.04em;background:transparent;border:none;color:var(--text-3);padding:12px 22px;cursor:pointer;border-bottom:3px solid transparent;}
+  .tab-btn.active{color:var(--amber-strong);border-bottom-color:var(--amber);}
+  .tab-btn:hover:not(.active){color:var(--text-1);}
+  .sync-status{font-family:var(--font-mono);font-size:11px;color:var(--text-3);padding:0 20px 8px;display:flex;align-items:center;gap:10px;}
+  .sync-status .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;}
+  .sync-status .dot.stale{background:var(--red);}
+
+  .view{display:none;padding:20px;max-width:1700px;margin:0 auto;}
+  .view.active{display:block;}
+
+  h1,h2,h3{font-family:var(--font-display);font-weight:500;margin:0;letter-spacing:0.01em;}
+  h2{font-size:19px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-1);}
+  h3{font-size:14px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;}
+
+  .week-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+  .week-nav{display:flex;align-items:center;gap:10px;}
+  .nav-btn{font-family:var(--font-display);text-transform:uppercase;font-size:12.5px;letter-spacing:0.04em;background:var(--bg-2);color:var(--text-1);border:1px solid var(--line);padding:7px 14px;border-radius:4px;cursor:pointer;}
+  .nav-btn:hover{background:var(--bg-3);}
+  .nav-btn.today{background:var(--amber);color:#221a0a;border-color:var(--amber);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;padding:9px 12px;background:var(--bg-1);border:1px solid var(--line);border-radius:var(--radius);}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-2);}
+  .legend-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
+
+  .cage-layout{display:grid;grid-template-columns:1fr 320px;gap:16px;}
+  .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;}
+  .day-col{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--radius);min-height:420px;display:flex;flex-direction:column;}
+  .day-col.is-today{border-color:var(--amber);box-shadow:inset 3px 0 0 var(--amber);}
+  .day-head{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--bg-2);border-radius:var(--radius) var(--radius) 0 0;}
+  .day-head .dname{font-family:var(--font-display);font-size:14px;text-transform:uppercase;letter-spacing:0.05em;}
+  .day-head .ddate{font-family:var(--font-mono);font-size:11px;color:var(--text-3);}
+  .day-body{padding:8px;display:flex;flex-direction:column;gap:8px;flex:1;}
+
+  .event-card{background:var(--bg-2);border:1px solid var(--line);border-left:3px solid var(--text-3);border-radius:4px;padding:8px 9px;}
+  .event-card.cat-load{border-left-color:var(--blue);}
+  .event-card.cat-strike{border-left-color:var(--red);}
+  .event-card.cat-rehearsal{border-left-color:var(--purple);}
+  .event-card.cat-show{border-left-color:var(--amber);}
+  .event-card.cat-function{border-left-color:var(--gold);}
+  .event-card.cat-shoot{border-left-color:var(--teal);}
+  .event-card.cat-facilities{border-left-color:var(--slate);}
+  .event-card.cat-open{border-left-color:var(--slate);}
+  .event-card.cat-none{border-left-color:var(--dim);opacity:0.55;}
+  .event-card.cat-other{border-left-color:var(--text-3);}
+  .event-card.is-manual{border-style:dashed;}
+
+  .ev-time{font-family:var(--font-mono);font-size:11px;color:var(--amber-strong);font-weight:700;}
+  .ev-title{font-size:12.5px;font-weight:600;margin:2px 0 3px;line-height:1.25;}
+  .ev-cat-badge{font-size:9px;text-transform:uppercase;letter-spacing:0.03em;font-weight:700;color:var(--text-2);}
+  .ev-meta{font-size:11px;color:var(--text-2);line-height:1.5;}
+  .ev-meta.tbc{color:var(--amber-strong);}
+  .tech-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+  .chip{font-size:10.5px;font-family:var(--font-mono);background:var(--bg-3);color:var(--text-1);padding:2px 7px;border-radius:20px;border:1px solid var(--line);}
+  .chip.chip-auto{background:var(--teal-dim);color:#a9e6ec;border-color:transparent;}
+  .chip.manual-tag{background:var(--purple-dim);color:#c8b8ee;border-color:transparent;}
+  .empty-day{color:var(--text-3);font-size:11px;padding:12px;font-style:italic;}
+
+  .sidebar{display:flex;flex-direction:column;gap:14px;}
+  .side-panel{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
+  .side-panel h3{margin-bottom:10px;}
+  .tech-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px;}
+  .tech-row:last-child{border-bottom:none;}
+  .tech-name{font-weight:600;}
+  .tech-detail{color:var(--text-2);font-size:11.5px;}
+
+  .task-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft);}
+  .task-item:last-child{border-bottom:none;}
+  .task-check{width:20px;height:20px;border-radius:4px;border:2px solid var(--text-3);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:transparent;margin-top:1px;}
+  .task-check.done{background:var(--green);border-color:var(--green);}
+  .task-check svg{display:none;width:12px;height:12px;stroke:#0d1f13;}
+  .task-check.done svg{display:block;}
+  .task-body{flex:1;}
+  .task-title{font-size:13px;font-weight:600;}
+  .task-title.done{color:var(--text-3);text-decoration:line-through;}
+  .task-sub{font-size:11px;color:var(--text-2);margin-top:2px;}
+  .cat-badge{font-size:9.5px;text-transform:uppercase;letter-spacing:0.03em;padding:1px 6px;border-radius:3px;font-weight:700;margin-right:6px;}
+  .cat-badge.cat-CCB{background:var(--blue-dim);color:#9cc4ec;}
+  .cat-badge.cat-Signage{background:var(--purple-dim);color:#c8b8ee;}
+  .cat-badge.cat-Exclusion{background:var(--red-dim);color:#ff9d97;}
+  .cat-badge.cat-Other{background:var(--bg-3);color:var(--text-2);}
+  .notice-item{font-size:12px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--line-soft);}
+  .notice-item:last-child{border-bottom:none;}
+
+  .console-layout{display:grid;grid-template-columns:1.1fr 0.9fr;gap:16px;align-items:start;}
+  .panel{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .panel + .panel{margin-top:16px;}
+  label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-2);margin:12px 0 5px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=number], input[type=time], select, textarea{width:100%;background:var(--bg-2);border:1px solid var(--line);color:var(--text-1);padding:9px 10px;border-radius:4px;font-family:var(--font-body);font-size:13.5px;}
+  textarea{resize:vertical;min-height:56px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .checkbox-row{display:flex;gap:16px;margin-top:12px;}
+  .checkbox-row label{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--text-1);}
+  .checkbox-row input{width:auto;}
+  .btn{font-family:var(--font-display);text-transform:uppercase;letter-spacing:0.04em;font-size:13px;background:var(--amber);color:#221a0a;border:none;padding:9px 16px;border-radius:4px;cursor:pointer;margin-top:12px;font-weight:600;}
+  .btn:hover{background:var(--amber-strong);}
+  .btn-sm{font-size:11.5px;padding:6px 11px;margin-top:0;}
+  .btn-secondary{background:var(--bg-3);color:var(--text-1);border:1px solid var(--line);}
+  .btn-secondary:hover{background:var(--bg-2);}
+
+  details.manual-add{margin-top:6px;}
+  details.manual-add summary{cursor:pointer;font-size:12.5px;color:var(--text-2);padding:6px 0;}
+  details.manual-add summary:hover{color:var(--text-1);}
+
+  .console-day-group{margin-bottom:14px;}
+  .console-day-title{font-family:var(--font-display);font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:var(--amber-strong);padding:6px 0;border-bottom:1px solid var(--line);margin-bottom:8px;}
+  .console-card{background:var(--bg-2);border:1px solid var(--line);border-radius:4px;padding:9px 10px;margin-bottom:8px;}
+  .console-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .console-card-title{font-size:12.5px;font-weight:600;}
+  .console-card-time{font-family:var(--font-mono);font-size:11px;color:var(--amber-strong);}
+  .review-flag{font-size:9.5px;text-transform:uppercase;font-weight:700;color:#221a0a;background:var(--amber-strong);padding:1px 6px;border-radius:3px;flex-shrink:0;}
+  .console-card-controls{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;}
+  .console-card-controls input[type=text]{width:auto;flex:1;min-width:140px;font-size:12.5px;padding:6px 8px;}
+  .console-card-controls select{width:auto;flex:1;min-width:140px;font-size:12.5px;padding:6px 8px;}
+  .assigned-chip{font-size:10.5px;font-family:var(--font-mono);background:var(--bg-3);color:var(--text-1);padding:2px 7px;border-radius:20px;border:1px solid var(--line);margin-right:4px;}
+  .console-scroll{max-height:500px;overflow-y:auto;padding-right:4px;}
+
+  .unmatched-card{background:var(--bg-2);border:1px solid var(--gold);border-radius:4px;padding:9px 10px;margin-bottom:8px;}
+  .unmatched-head{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;}
+  .unmatched-reason{font-size:11px;color:var(--text-2);margin-top:3px;font-style:italic;}
+  .unmatched-note{font-size:11.5px;color:var(--text-2);margin-top:4px;font-family:var(--font-mono);background:var(--bg-3);padding:5px 7px;border-radius:3px;}
+  .unmatched-controls{display:flex;gap:8px;margin-top:8px;}
+  .unmatched-controls select{flex:1;font-size:12.5px;padding:6px 8px;}
+
+  .task-list-console .task-item{align-items:center;}
+  .status-tag{font-size:10px;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:3px;}
+  .status-tag.pending{background:var(--amber-dim);color:var(--amber-strong);}
+  .status-tag.done{background:var(--green-dim);color:#8fdaa8;}
+
+  .log-list{max-height:220px;overflow-y:auto;}
+  .log-entry{font-family:var(--font-mono);font-size:11.5px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--line-soft);display:flex;gap:8px;}
+  .log-entry:last-child{border-bottom:none;}
+  .log-time{color:var(--text-3);flex-shrink:0;}
+
+  #toast-wrap{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:999;}
+  .toast{background:var(--bg-3);border:1px solid var(--amber);border-left:4px solid var(--amber);color:var(--text-1);padding:11px 16px;border-radius:5px;font-size:13px;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,0.4);animation:slidein 0.25s ease;}
+  @keyframes slidein{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+
+  .banner-note{background:var(--bg-2);border:1px dashed var(--line);border-radius:var(--radius);padding:10px 14px;font-size:11.5px;color:var(--text-2);margin-bottom:16px;line-height:1.6;}
+  .banner-note b{color:var(--text-1);}
+  .banner-note code{font-family:var(--font-mono);background:var(--bg-3);padding:1px 5px;border-radius:3px;}
+
+  @media (max-width:1100px){
+    .cage-layout{grid-template-columns:1fr;}
+    .week-grid{grid-template-columns:repeat(4,1fr);overflow-x:auto;}
+    .console-layout{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="cue-strip" id="cueStrip"></div>
+
+<div class="tabbar">
+  <div class="tabbar-left">
+    <button class="tab-btn active" data-view="cage">Cage display</button>
+    <button class="tab-btn" data-view="console">Producer console</button>
+  </div>
+</div>
+<div class="sync-status" id="syncStatus"></div>
+
+<div class="view active" id="view-cage">
+  <div class="banner-note">Live shared dashboard — updates from Smartsheet, Deputy, and any producer device appear here automatically, no refresh needed.</div>
+  <div class="week-header">
+    <h2 id="weekTitle">Week of —</h2>
+    <div class="week-nav">
+      <button class="nav-btn" onclick="changeWeek(-1)">&larr; Prev week</button>
+      <button class="nav-btn today" onclick="goToday()">This week</button>
+      <button class="nav-btn" onclick="changeWeek(1)">Next week &rarr;</button>
+    </div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="cage-layout">
+    <div><div class="week-grid" id="weekGrid"></div></div>
+    <div class="sidebar">
+      <div class="side-panel"><h3>On now</h3><div id="onNowList"></div></div>
+      <div class="side-panel"><h3>On later today</h3><div id="onLaterList"></div></div>
+      <div class="side-panel"><h3>Tasks for today</h3><div id="taskListCage"></div></div>
+      <div class="side-panel"><h3>Facilities &amp; precinct notices <span style="color:var(--text-3);font-weight:400;">(placeholder)</span></h3><div id="noticeList"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="view" id="view-console">
+  <div class="banner-note">Producer console — every action here writes straight to the shared server and appears on the cage display within a few seconds, automatically.</div>
+  <div class="console-layout">
+    <div>
+      <div class="panel">
+        <h2>Deputy shifts needing manual review</h2>
+        <div id="unmatchedList"></div>
+      </div>
+      <div class="panel">
+        <h2>Assign techs &amp; resolve locations — same week as cage display</h2>
+        <div class="console-scroll" id="consoleCardList"></div>
+        <details class="manual-add">
+          <summary>+ Add a manual event (not from Smartsheet)</summary>
+          <label>Day</label>
+          <select id="man-day"></select>
+          <label>Event / activity name</label>
+          <input type="text" id="man-title" placeholder="e.g. Unscheduled AV check">
+          <div class="row2">
+            <div><label>Start</label><input type="time" id="man-start" value="09:00"></div>
+            <div><label>Finish</label><input type="time" id="man-finish" value="10:00"></div>
+          </div>
+          <label>Category</label>
+          <select id="man-cat">
+            <option value="load">Load / Bump in</option>
+            <option value="strike">Strike / Bump out</option>
+            <option value="rehearsal">Rehearsal</option>
+            <option value="show" selected>Show / Performance / Event</option>
+            <option value="facilities">Facilities</option>
+            <option value="other">Other</option>
+          </select>
+          <label>Location</label>
+          <input type="text" id="man-location" placeholder="e.g. Bay 17">
+          <button class="btn btn-sm" onclick="addManualEvent()">Add manual event</button>
+        </details>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Add task / note for STs</h2>
+        <label>Task title</label>
+        <input type="text" id="task-title" placeholder="e.g. Put out CCB and bollards, loading dock">
+        <div class="row2">
+          <div><label>Category</label><select id="task-cat"><option>CCB</option><option>Signage</option><option>Exclusion</option><option>Other</option></select></div>
+          <div><label>Assign to</label><input type="text" id="task-tech" placeholder="Tech name or 'All on shift'"></div>
+        </div>
+        <label>Day</label>
+        <select id="task-day"></select>
+        <div class="checkbox-row">
+          <label><input type="checkbox" id="notify-push" checked> Push notification</label>
+          <label><input type="checkbox" id="notify-sms"> SMS</label>
+        </div>
+        <button class="btn" onclick="addTask()">Send task to STs</button>
+      </div>
+
+      <div class="panel"><h2>All tasks</h2><div class="task-list-console" id="taskListConsole"></div></div>
+      <div class="panel"><h2>Notification log</h2><div class="log-list" id="logList"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+/* ============================================================
+   All data now comes from /api/state on this same server — no
+   more client-side merge logic. The server is the single source
+   of truth for every device viewing this dashboard.
+   ============================================================ */
+const POLL_INTERVAL_MS = 5000; // 5 seconds — near-instant on a local network, no click needed
+
+let cards = [];
+let tasks = [];
+let unmatchedShifts = [];
+let logs = [];
+let lastSyncedAt = null;
+let lastPollOk = true;
+
+const CATEGORY_MAP = {
+  load:{color:'blue',label:'Bump In'}, strike:{color:'red',label:'Bump Out'},
+  rehearsal:{color:'purple',label:'Rehearsal'}, show:{color:'amber',label:'Event'},
+  facilities:{color:'slate',label:'Cleaning Team Onsite'}, other:{color:'grey',label:'Other'},
+};
+
+/* ---------- POLLING ---------- */
+async function pollState(){
+  try{
+    const resp = await fetch('/api/state', {cache:'no-store'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    cards = data.cards || [];
+    tasks = data.tasks || [];
+    unmatchedShifts = data.unmatchedShifts || [];
+    logs = data.logs || [];
+    lastSyncedAt = data.lastSyncedAt;
+    lastPollOk = true;
+  }catch(err){
+    lastPollOk = false;
+  }
+  renderAll();
+}
+setInterval(pollState, POLL_INTERVAL_MS);
+
+/* ---------- ACTIONS: fire-and-forget POST, then let the next poll reconcile ---------- */
+async function postJSON(url, body){
+  try{
+    const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    if(!resp.ok){ showToast('Action failed — check the server'); return null; }
+    return await resp.json();
+  }catch(err){
+    showToast('Could not reach server — check the connection');
+    return null;
+  }
+}
+
+/* ---------- WEEK NAVIGATION ---------- */
+let weekOffset = 0;
+function getMonday(d){ const date=new Date(d); const day=date.getDay(); date.setDate(date.getDate()+(day===0?-6:1-day)); date.setHours(0,0,0,0); return date; }
+function currentWeekDates(){ const base=getMonday(new Date()); base.setDate(base.getDate()+weekOffset*7); const days=[]; for(let i=0;i<7;i++){const d=new Date(base); d.setDate(d.getDate()+i); days.push(d);} return days; }
+function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtDayLabel(d){ return d.toLocaleDateString('en-AU',{weekday:'short'}); }
+function fmtDateLabel(d){ return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'}); }
+function todayKey(){ return dateKey(new Date()); }
+function changeWeek(delta){ weekOffset += delta; renderAll(); }
+function goToday(){ weekOffset = 0; renderAll(); }
+
+/* ---------- CUE STRIP ---------- */
+function renderCueStrip(){
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  document.getElementById('cueStrip').innerHTML = `
+    <div class="cue-item"><span class="cue-label">Time</span><span class="cue-value clock-value">${timeStr}</span></div>
+    <div class="cue-item"><span class="cue-label">Weather</span><span class="cue-value">14°C · Clear (placeholder)</span></div>
+    <div class="cue-item"><span class="cue-label">Lock up</span><span class="pill warn"><span class="pill-dot"></span>22:30 tonight (placeholder)</span></div>
+    <div class="cue-item"><span class="cue-label">Chief warden</span><span class="pill ok"><span class="pill-dot"></span>On site (placeholder)</span></div>
+    <div class="cue-item"><span class="cue-label">Deputy warden</span><span class="pill ok"><span class="pill-dot"></span>On site (placeholder)</span></div>
+    <div class="cue-item"><span class="cue-label">Evac status</span><span class="pill ok"><span class="pill-dot"></span>Clear (placeholder)</span></div>
+  `;
+}
+setInterval(renderCueStrip,1000); renderCueStrip();
+
+/* ---------- TABS ---------- */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+  });
+});
+
+/* ---------- SYNC STATUS ---------- */
+function renderSyncStatus(){
+  const label = lastSyncedAt ? `Backend last synced ${new Date(lastSyncedAt).toLocaleString('en-AU')}` : 'Waiting for first sync...';
+  document.getElementById('syncStatus').innerHTML = `
+    <span class="dot ${lastPollOk?'':'stale'}"></span>
+    <span>${lastPollOk ? label : 'Lost connection to server — retrying...'}</span>
+  `;
+}
+
+/* ---------- LEGEND ---------- */
+function renderLegend(){
+  const entries = [
+    ['blue','Load / Bump in'], ['red','Strike / Bump out'], ['purple','Rehearsal'],
+    ['amber','Show / Performance / Event'], ['gold','Function'], ['teal','Shoot'],
+    ['slate','Facilities / Open'], ['dim','No activity'],
+  ];
+  document.getElementById('legend').innerHTML = entries.map(([c,l])=>`
+    <div class="legend-item"><span class="legend-dot" style="background:var(--${c})"></span>${l}</div>
+  `).join('');
+}
+
+/* ---------- WEEK GRID ---------- */
+function renderWeekGrid(){
+  const days = currentWeekDates();
+  document.getElementById('weekTitle').textContent =
+    'Week of ' + fmtDateLabel(days[0]) + ' – ' + fmtDateLabel(days[6]) + ', ' + days[0].getFullYear();
+
+  const grid = document.getElementById('weekGrid');
+  grid.innerHTML = days.map(d=>{
+    const key = dateKey(d);
+    const dayCards = cards.filter(c=>c.date===key).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+    const cardsHtml = dayCards.length ? dayCards.map(c=>{
+      return `
+        <div class="event-card cat-${c.category.key} ${c.isManual?'is-manual':''}">
+          <div class="ev-time">${c.start||'—'} – ${c.end||'—'}</div>
+          <div class="ev-title">${c.project}${c.needsReview?' <span style="color:var(--amber-strong);font-size:10px;">(check)</span>':''}</div>
+          <div class="ev-cat-badge">${c.category.label}</div>
+          <div class="ev-meta ${c.locationLabel==='Multiple — TBC'?'tbc':''}">${c.locationLabel}${c.pax?' · Est. '+c.pax+' att.':''}</div>
+          <div class="tech-chips">
+            ${c.isManual?'<span class="chip manual-tag">Manual</span>':''}
+            ${c.techsAuto.map(t=>`<span class="chip chip-auto">${t} · Deputy</span>`).join('')}
+            ${c.techsManual.map(t=>`<span class="chip">${t}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }).join('') : `<div class="empty-day">No activity scheduled</div>`;
+    return `
+      <div class="day-col ${key===todayKey()?'is-today':''}">
+        <div class="day-head"><div class="dname">${fmtDayLabel(d)}</div><div class="ddate">${fmtDateLabel(d)}</div></div>
+        <div class="day-body">${cardsHtml}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- ON NOW / ON LATER ---------- */
+function toMin(t){ if(!t) return null; const p=t.split(':'); return (+p[0])*60+(+p[1]||0); }
+function renderTechPresence(){
+  const tKey = todayKey();
+  const now = new Date();
+  const nowMin = now.getHours()*60+now.getMinutes();
+  const todaysCards = cards.filter(c=>c.date===tKey);
+
+  const onNow=[], onLater=[];
+  todaysCards.forEach(c=>{
+    const techs = [...c.techsAuto, ...c.techsManual];
+    if(!techs.length) return;
+    const s=toMin(c.start), e=toMin(c.end);
+    techs.forEach(t=>{
+      if(s!==null && e!==null && s<=nowMin && nowMin<e) onNow.push({tech:t,card:c});
+      else if(s!==null && s>nowMin) onLater.push({tech:t,card:c});
+    });
+  });
+
+  document.getElementById('onNowList').innerHTML = onNow.length ? onNow.map(x=>`
+    <div class="tech-row"><span class="tech-name">${x.tech}</span><span class="tech-detail">${x.card.locationLabel}</span></div>
+  `).join('') : '<div class="tech-detail">No techs assigned to a current activity yet</div>';
+
+  document.getElementById('onLaterList').innerHTML = onLater.length ? onLater.map(x=>`
+    <div class="tech-row"><span class="tech-name">${x.tech}</span><span class="tech-detail">${x.card.start} · ${x.card.locationLabel}</span></div>
+  `).join('') : '<div class="tech-detail">No techs assigned to a later activity today</div>';
+}
+
+/* ---------- TASKS ---------- */
+function renderTasks(){
+  const tKey = todayKey();
+  const todaysTasks = tasks.filter(t=>t.day===tKey);
+  document.getElementById('taskListCage').innerHTML = todaysTasks.length ? todaysTasks.map(t=>`
+    <div class="task-item">
+      <div class="task-check ${t.status==='done'?'done':''}" onclick="toggleTask(${t.id})">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round"><path d="M4 12l5 5L20 6"/></svg>
+      </div>
+      <div class="task-body">
+        <div class="task-title ${t.status==='done'?'done':''}">${t.title}</div>
+        <div class="task-sub"><span class="cat-badge cat-${t.category}">${t.category}</span>${t.tech}</div>
+      </div>
+    </div>
+  `).join('') : '<div class="tech-detail">No tasks logged for today</div>';
+
+  document.getElementById('taskListConsole').innerHTML = tasks.length ? tasks.map(t=>`
+    <div class="task-item">
+      <div class="task-body">
+        <div class="task-title">${t.title}</div>
+        <div class="task-sub"><span class="cat-badge cat-${t.category}">${t.category}</span>${t.day} · ${t.tech}</div>
+      </div>
+      <span class="status-tag ${t.status}">${t.status}</span>
+    </div>
+  `).join('') : '<div class="tech-detail">No tasks yet</div>';
+}
+async function toggleTask(id){
+  await postJSON(`/api/task/${id}/toggle`);
+  pollState();
+}
+
+/* ---------- NOTICES / LOG / TOAST ---------- */
+function renderNotices(){
+  const notices = ['(placeholder) Contractor onsite — HVAC works, Bay 12, until 3pm','(placeholder) Loading dock ramp resurfacing — use secondary access'];
+  document.getElementById('noticeList').innerHTML = notices.map(n=>`<div class="notice-item">${n}</div>`).join('');
+}
+function renderLog(){
+  document.getElementById('logList').innerHTML = logs.length ? logs.map(l=>`<div class="log-entry"><span class="log-time">${new Date(l.ts).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',hour12:false})}</span><span>${l.text}</span></div>`).join('') : '<div class="tech-detail">No notifications sent yet</div>';
+}
+function showToast(text){ const wrap=document.getElementById('toast-wrap'); const el=document.createElement('div'); el.className='toast'; el.textContent=text; wrap.appendChild(el); setTimeout(()=>el.remove(),4500); }
+
+/* ---------- UNMATCHED DEPUTY SHIFTS ---------- */
+function containerHasFocus(id){
+  const el = document.getElementById(id);
+  return !!(el && document.activeElement && document.activeElement !== document.body && el.contains(document.activeElement));
+}
+
+function renderUnmatched(){
+  if(containerHasFocus('unmatchedList')) return; // don't yank a select/button out from under an in-progress click
+  const el = document.getElementById('unmatchedList');
+  if(!unmatchedShifts.length){ el.innerHTML = '<div class="tech-detail">No unresolved Deputy shifts — everything matched cleanly.</div>'; return; }
+  el.innerHTML = unmatchedShifts.map(s=>{
+    const sameDayCards = cards.filter(c=>c.date===s.date);
+    const options = sameDayCards.map(c=>`<option value="${c.id}">${c.project} — ${c.activity_label} (${c.start||'—'}–${c.end||'—'})</option>`).join('');
+    return `
+      <div class="unmatched-card">
+        <div class="unmatched-head"><span>${s.employee} · ${s.date} · ${s.start||'—'}–${s.end||'—'}</span></div>
+        <div class="unmatched-note">"${s.note}"</div>
+        <div class="unmatched-reason">${s.reason}</div>
+        <div class="unmatched-controls">
+          <select id="unmatched-select-${s.shift_id}"><option value="">Link to card…</option>${options}</select>
+          <button class="btn btn-sm btn-secondary" onclick="resolveUnmatched('${s.shift_id}')">Link</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+async function resolveUnmatched(shiftId){
+  const sel = document.getElementById('unmatched-select-'+shiftId);
+  const cardId = sel.value;
+  if(!cardId){ showToast('Choose a card first'); return; }
+  const result = await postJSON(`/api/unmatched/${shiftId}/resolve`, {cardId});
+  if(result) showToast('Linked and assigned');
+  pollState();
+}
+
+/* ---------- PRODUCER CONSOLE: CARD LIST ---------- */
+function populateDaySelectors(){
+  const days = currentWeekDates();
+  const opts = days.map(d=>`<option value="${dateKey(d)}">${fmtDayLabel(d)} ${fmtDateLabel(d)}</option>`).join('');
+  const taskSel = document.getElementById('task-day'), manSel = document.getElementById('man-day');
+  if(document.activeElement !== taskSel) taskSel.innerHTML = opts;
+  if(document.activeElement !== manSel) manSel.innerHTML = opts;
+}
+
+function renderConsoleCardList(){
+  if(containerHasFocus('consoleCardList')) return; // don't yank a select/input out from under an in-progress action
+  const days = currentWeekDates();
+  let html = '';
+  days.forEach(d=>{
+    const key = dateKey(d);
+    const dayCards = cards.filter(c=>c.date===key).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+    if(!dayCards.length) return;
+    html += `<div class="console-day-group"><div class="console-day-title">${fmtDayLabel(d)} ${fmtDateLabel(d)}</div>`;
+    dayCards.forEach(c=>{
+      let locControl = '';
+      if(c.locationOptions.length>1){
+        locControl = `<select onchange="setLocation('${c.id}', this.value)">
+          <option value="">Choose location…</option>
+          ${c.locationOptions.map(l=>`<option value="${l}" ${l===c.resolved_location?'selected':''}>${l}</option>`).join('')}
+        </select>`;
+      } else {
+        locControl = `<span class="assigned-chip">${c.locationLabel}</span>`;
+      }
+      html += `
+        <div class="console-card">
+          <div class="console-card-head">
+            <div>
+              <div class="console-card-title">${c.project} — ${c.category.label}${c.isManual?' (manual)':''}</div>
+              <div class="console-card-time">${c.start||'—'} – ${c.end||'—'}</div>
+            </div>
+            ${c.needsReview?'<span class="review-flag">Needs review</span>':''}
+          </div>
+          <div class="console-card-controls">
+            ${locControl}
+            <input type="text" id="tech-input-${c.id}" placeholder="Add tech name">
+            <button class="btn btn-sm btn-secondary" onclick="addTechToCard('${c.id}')">Assign</button>
+          </div>
+          <div class="tech-chips" style="margin-top:6px;">
+            ${c.techsAuto.map(t=>`<span class="chip chip-auto">${t} · Deputy</span>`).join('')}
+            ${c.techsManual.map(t=>`<span class="chip">${t}</span>`).join('')}
+            ${(!c.techsAuto.length && !c.techsManual.length) ? '<span class="tech-detail">No techs assigned yet</span>' : ''}
+          </div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  });
+  document.getElementById('consoleCardList').innerHTML = html || '<div class="tech-detail">No Smartsheet activity in this week</div>';
+}
+async function setLocation(cardId, value){
+  if(!value) return;
+  await postJSON('/api/location', {cardId, location: value});
+  showToast('Location resolved');
+  pollState();
+}
+async function addTechToCard(cardId){
+  const input = document.getElementById('tech-input-'+cardId);
+  const name = input.value.trim();
+  if(!name) return;
+  await postJSON('/api/tech-assignment', {cardId, techName: name});
+  input.value='';
+  showToast(`${name} assigned and notified`);
+  pollState();
+}
+
+/* ---------- FORM HANDLERS ---------- */
+async function addManualEvent(){
+  const title = document.getElementById('man-title').value.trim();
+  if(!title){ showToast('Enter an event name first'); return; }
+  await postJSON('/api/manual-event', {
+    day: document.getElementById('man-day').value,
+    title,
+    category: document.getElementById('man-cat').value,
+    location: document.getElementById('man-location').value.trim(),
+    start: document.getElementById('man-start').value,
+    end: document.getElementById('man-finish').value,
+  });
+  document.getElementById('man-title').value='';
+  document.getElementById('man-location').value='';
+  showToast('Manual event added');
+  pollState();
+}
+
+async function addTask(){
+  const title = document.getElementById('task-title').value.trim();
+  if(!title){ showToast('Enter a task first'); return; }
+  await postJSON('/api/task', {
+    day: document.getElementById('task-day').value,
+    title,
+    category: document.getElementById('task-cat').value,
+    tech: document.getElementById('task-tech').value.trim(),
+    notifyPush: document.getElementById('notify-push').checked,
+    notifySms: document.getElementById('notify-sms').checked,
+  });
+  document.getElementById('task-title').value='';
+  document.getElementById('task-tech').value='';
+  showToast('Task sent');
+  pollState();
+}
+
+/* ---------- RENDER ALL ---------- */
+function renderAll(){
+  renderSyncStatus();
+  renderLegend();
+  renderWeekGrid();
+  renderTechPresence();
+  renderTasks();
+  renderNotices();
+  renderLog();
+  populateDaySelectors();
+  renderConsoleCardList();
+  renderUnmatched();
+}
+
+pollState();
+</script>
+</body>
+</html>
