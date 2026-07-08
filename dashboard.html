@@ -288,13 +288,24 @@
 
 <div id="toast-wrap"></div>
 
+<!-- Supabase client — powers instant cross-device updates via realtime -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ============================================================
    All data now comes from /api/state on this same server — no
    more client-side merge logic. The server is the single source
    of truth for every device viewing this dashboard.
    ============================================================ */
-const POLL_INTERVAL_MS = 5000; // 5 seconds — near-instant on a local network, no click needed
+/* Supabase realtime settings. These two values are safe to ship in the page
+   (the anon key is designed to be public). They get filled in during setup. */
+const SUPABASE_URL = '__SUPABASE_URL__';
+const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
+const REALTIME_READY = SUPABASE_URL.indexOf('http') === 0 && SUPABASE_ANON_KEY.length > 20;
+
+/* Background safety poll. Once realtime is live, updates arrive instantly, so
+   this is just a slow heartbeat in case a realtime message is ever missed.
+   Until the keys above are filled in, it falls back to a quick 5s poll. */
+const POLL_INTERVAL_MS = REALTIME_READY ? 30000 : 5000;
 
 let cards = [];
 let tasks = [];
@@ -326,7 +337,20 @@ async function pollState(){
   }
   renderAll();
 }
-setInterval(pollState, POLL_INTERVAL_MS);
+setInterval(pollState, POLL_INTERVAL_MS);  // safety-net heartbeat
+
+/* ---------- REALTIME: refetch the instant the database changes ---------- */
+function setupRealtime(){
+  if(!REALTIME_READY){ return; } // keys not filled in yet — the poll above keeps things fresh in the meantime
+  if(!window.supabase){ console.warn('Supabase client did not load; staying on polling only'); return; }
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  let t = null;
+  const refetchSoon = () => { clearTimeout(t); t = setTimeout(pollState, 150); }; // batch a burst of row changes into one refetch
+  supa.channel('boh-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, refetchSoon)
+      .subscribe();
+}
+setupRealtime();
 
 /* ---------- ACTIONS: fire-and-forget POST, then let the next poll reconcile ---------- */
 async function postJSON(url, body){

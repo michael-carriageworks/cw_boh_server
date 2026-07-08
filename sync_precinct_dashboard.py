@@ -63,9 +63,7 @@ DEPUTY_BOH_LOCATION_NAMES = [
 ]
 DEPUTY_TOKEN_STORE = os.environ.get("DEPUTY_TOKEN_STORE", "deputy_token_store.json")
 
-import sqlite3
-
-DB_PATH = os.environ.get("DB_PATH", "boh_dashboard.db")
+from db import get_connection, run_schema
 
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
@@ -74,9 +72,7 @@ def ensure_schema(conn):
     """The sync script no longer depends on app.py having been run first —
     every CREATE TABLE in schema.sql uses IF NOT EXISTS, so this is safe
     to call every time regardless of whether the tables already exist."""
-    with open(SCHEMA_PATH) as f:
-        conn.executescript(f.read())
-    conn.commit()
+    run_schema(conn, SCHEMA_PATH)
 
 def write_to_database(cards, tech_assignments, unmatched, generated_at):
     """
@@ -87,34 +83,33 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
         never touched by sync — only source='deputy' rows are replaced)
       - all is_manual=1 cards (producer ad hoc events, never touched by sync)
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     ensure_schema(conn)
-    conn.row_factory = sqlite3.Row
 
     existing_smartsheet_ids = {r["id"] for r in conn.execute("SELECT id FROM cards WHERE is_manual = 0")}
     new_ids = {c["id"] for c in cards}
     removed_ids = existing_smartsheet_ids - new_ids
     for rid in removed_ids:
-        conn.execute("DELETE FROM cards WHERE id = ?", (rid,))
-        conn.execute("DELETE FROM tech_assignments WHERE card_id = ?", (rid,))
+        conn.execute("DELETE FROM cards WHERE id = %s", (rid,))
+        conn.execute("DELETE FROM tech_assignments WHERE card_id = %s", (rid,))
     if removed_ids:
         conn.execute(
-            "INSERT INTO notification_log (ts, text) VALUES (?, ?)",
+            "INSERT INTO notification_log (ts, text) VALUES (%s, %s)",
             (datetime.now().isoformat(), f"{len(removed_ids)} event(s) removed from Smartsheet, no longer on the dashboard"),
         )
 
     for c in cards:
         auto_location = c["locationOptions"][0] if len(c["locationOptions"]) == 1 else None
         conn.execute("""
-            INSERT INTO cards (id, project, subproject, date, start, end, activity_label,
+            INSERT INTO cards (id, project, subproject, date, start, "end", activity_label,
                                 category_key, category_label, category_color, pax, notes,
                                 location_options, resolved_location, is_manual, needs_review)
-            VALUES (:id, :project, :subproject, :date, :start, :end, :activityLabel,
-                    :category_key, :category_label, :category_color, :pax, :notes,
-                    :location_options, :resolved_location, 0, :needs_review)
+            VALUES (%(id)s, %(project)s, %(subproject)s, %(date)s, %(start)s, %(end)s, %(activityLabel)s,
+                    %(category_key)s, %(category_label)s, %(category_color)s, %(pax)s, %(notes)s,
+                    %(location_options)s, %(resolved_location)s, 0, %(needs_review)s)
             ON CONFLICT(id) DO UPDATE SET
                 project=excluded.project, subproject=excluded.subproject, date=excluded.date,
-                start=excluded.start, end=excluded.end, activity_label=excluded.activity_label,
+                start=excluded.start, "end"=excluded."end", activity_label=excluded.activity_label,
                 category_key=excluded.category_key, category_label=excluded.category_label,
                 category_color=excluded.category_color, pax=excluded.pax, notes=excluded.notes,
                 location_options=excluded.location_options, needs_review=excluded.needs_review
@@ -133,22 +128,22 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
     for card_id, names in tech_assignments.items():
         for name in names:
             conn.execute(
-                "INSERT OR IGNORE INTO tech_assignments (card_id, tech_name, source, assigned_at) VALUES (?, ?, 'deputy', ?)",
+                "INSERT INTO tech_assignments (card_id, tech_name, source, assigned_at) VALUES (%s, %s, 'deputy', %s) ON CONFLICT DO NOTHING",
                 (card_id, name, now),
             )
 
     for u in unmatched:
         conn.execute("""
-            INSERT INTO unmatched_shifts (shift_id, employee, date, start, end, note, reason, resolved)
-            VALUES (:shift_id, :employee, :date, :start, :end, :note, :reason, 0)
+            INSERT INTO unmatched_shifts (shift_id, employee, date, start, "end", note, reason, resolved)
+            VALUES (%(shift_id)s, %(employee)s, %(date)s, %(start)s, %(end)s, %(note)s, %(reason)s, 0)
             ON CONFLICT(shift_id) DO UPDATE SET
                 employee=excluded.employee, date=excluded.date, start=excluded.start,
-                end=excluded.end, note=excluded.note, reason=excluded.reason
+                "end"=excluded."end", note=excluded.note, reason=excluded.reason
                 -- deliberately NOT resetting `resolved` — a producer's manual link survives resync
         """, u)
 
     conn.execute(
-        "INSERT INTO meta (key, value) VALUES ('last_synced_at', ?) "
+        "INSERT INTO meta (key, value) VALUES ('last_synced_at', %s) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (generated_at,),
     )
@@ -161,26 +156,42 @@ missing = [k for k, v in REQUIRED.items() if not v]
 if missing:
     sys.exit(f"Missing required environment variables: {', '.join(missing)}")
 
-if not os.path.exists(DEPUTY_TOKEN_STORE):
-    sys.exit(
-        f"{DEPUTY_TOKEN_STORE} not found — run deputy_oauth_setup.py once first "
-        f"to bootstrap the initial access/refresh token pair."
-    )
-
 SMARTSHEET_HEADERS = {"Authorization": f"Bearer {SMARTSHEET_TOKEN}"}
 
 
 def load_deputy_token_store():
-    with open(DEPUTY_TOKEN_STORE) as f:
-        return json.load(f)
+    """Load the Deputy OAuth token store from the database (the durable home in
+    the cloud). On first run the database row won't exist yet, so we fall back
+    to the local deputy_token_store.json bootstrap file and copy it into the
+    database. If neither exists, there is nothing to refresh from."""
+    conn = get_connection()
+    ensure_schema(conn)
+    row = conn.execute("SELECT data FROM deputy_tokens WHERE id = 1").fetchone()
+    conn.close()
+    if row:
+        return json.loads(row["data"])
+    if os.path.exists(DEPUTY_TOKEN_STORE):
+        with open(DEPUTY_TOKEN_STORE) as f:
+            store = json.load(f)
+        save_deputy_token_store(store)  # migrate the local file into the database
+        return store
+    sys.exit(
+        f"No Deputy token found in the database or at {DEPUTY_TOKEN_STORE} — "
+        f"run deputy_oauth_setup.py once first to bootstrap the initial "
+        f"access/refresh token pair."
+    )
 
 def save_deputy_token_store(store):
-    """Atomic write — avoids a corrupted/half-written token file if the
-    process is interrupted mid-save, which would otherwise lock you out."""
-    tmp_path = DEPUTY_TOKEN_STORE + ".tmp"
-    with open(tmp_path, "w") as f:
-        json.dump(store, f, indent=2)
-    os.replace(tmp_path, DEPUTY_TOKEN_STORE)
+    """Persist the token store back to the database, upserting the single row."""
+    conn = get_connection()
+    ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO deputy_tokens (id, data) VALUES (1, %s) "
+        "ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+        (json.dumps(store),),
+    )
+    conn.commit()
+    conn.close()
 
 def normalize_endpoint(endpoint):
     """Deputy's OAuth response has been observed to return the endpoint
@@ -664,7 +675,7 @@ def main():
 
     generated_at = datetime.now().isoformat()
     write_to_database(cards, tech_assignments, unmatched, generated_at)
-    print(f"  Wrote results to {DB_PATH}")
+    print("  Wrote results to the Supabase database")
 
 
 if __name__ == "__main__":

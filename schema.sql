@@ -1,3 +1,13 @@
+-- schema.sql — Postgres (Supabase) schema for the BOH Technician Dashboard.
+--
+-- Ported from the original SQLite schema. Notable differences:
+--   * "end" is a reserved word in Postgres, so that one column is quoted.
+--   * INTEGER PRIMARY KEY AUTOINCREMENT -> GENERATED ALWAYS AS IDENTITY.
+--   * Boolean-ish flags stay as INTEGER (0/1) to keep the Python untouched.
+-- Every statement is idempotent (IF NOT EXISTS) so it is safe to run repeatedly,
+-- exactly like the original — either the app, the sync job, or a one-time paste
+-- into the Supabase SQL editor can initialise an empty database.
+
 -- Cards: Smartsheet-derived activity cards (is_manual=0) plus producer-added
 -- ad hoc events (is_manual=1). resolved_location is deliberately preserved
 -- across syncs — see the ON CONFLICT clause in the sync script.
@@ -7,7 +17,7 @@ CREATE TABLE IF NOT EXISTS cards (
     subproject TEXT,
     date TEXT NOT NULL,
     start TEXT,
-    end TEXT,
+    "end" TEXT,
     activity_label TEXT,
     category_key TEXT,
     category_label TEXT,
@@ -31,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tech_assignments (
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     day TEXT NOT NULL,
     title TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -49,14 +59,14 @@ CREATE TABLE IF NOT EXISTS unmatched_shifts (
     employee TEXT,
     date TEXT,
     start TEXT,
-    end TEXT,
+    "end" TEXT,
     note TEXT,
     reason TEXT,
     resolved INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS notification_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ts TEXT NOT NULL,
     text TEXT NOT NULL
 );
@@ -64,4 +74,14 @@ CREATE TABLE IF NOT EXISTS notification_log (
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+
+-- Deputy OAuth token store. Holds the single JSON blob that used to live in
+-- deputy_token_store.json on Michael's Mac. Kept in the database so the
+-- GitHub Actions sync — which has no persistent filesystem — can refresh and
+-- persist a rotated Deputy refresh token across runs. This table is private:
+-- it is NOT added to the realtime publication and NOT exposed to the dashboard.
+CREATE TABLE IF NOT EXISTS deputy_tokens (
+    id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL
 );
