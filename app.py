@@ -17,9 +17,11 @@ api/index.py and vercel.json).
 
 import os
 import json
-from datetime import datetime, timezone
+import hmac
+from datetime import datetime, timezone, timedelta
 
-from flask import Flask, g, jsonify, request, send_from_directory
+from flask import (Flask, g, jsonify, request, send_from_directory,
+                   session, redirect, render_template_string)
 
 from db import get_connection, run_schema
 
@@ -54,6 +56,89 @@ def now_iso():
 
 def log(db, text):
     db.execute("INSERT INTO notification_log (ts, text) VALUES (%s, %s)", (now_iso(), text))
+
+
+# ============================================================
+# SHARED LOGIN (single username/password for everyone)
+# ============================================================
+# The gate only activates once BOTH a username and password are configured
+# (as Vercel environment variables), so deploying this code changes nothing
+# until you set them — no risk of locking yourself out. SECRET_KEY signs the
+# "you're logged in" cookie; it must be a stable random value in the cloud.
+app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-change-me")
+app.permanent_session_lifetime = timedelta(days=30)  # stay signed in for 30 days
+
+DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "")
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+LOGIN_ENABLED = bool(DASHBOARD_USER and DASHBOARD_PASSWORD)
+
+LOGIN_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carriageworks BOH — Sign in</title>
+<style>
+ :root{--bg:#0d0d0f;--panel:#17171b;--line:#2a2a30;--text:#e8e8ea;--dim:#9a9aa2;--amber:#f2a02a;}
+ *{box-sizing:border-box}
+ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);
+      color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+ .card{width:min(92vw,360px);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;}
+ h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin:0 0 4px;}
+ p.sub{margin:0 0 22px;color:var(--dim);font-size:13px;}
+ label{display:block;font-size:12px;color:var(--dim);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.08em;}
+ input{width:100%;padding:11px 12px;background:#0e0e11;border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:16px;}
+ input:focus{outline:none;border-color:var(--amber);}
+ button{width:100%;margin-top:22px;padding:12px;background:var(--amber);color:#111;border:0;border-radius:8px;
+        font-weight:700;font-size:15px;cursor:pointer;letter-spacing:.04em;}
+ .err{margin-top:16px;color:#ff6b6b;font-size:13px;min-height:16px;}
+</style></head><body>
+ <form class="card" method="post" action="/login">
+   <h1>Carriageworks BOH</h1>
+   <p class="sub">Technician Dashboard — please sign in</p>
+   <label for="username">Username</label>
+   <input id="username" name="username" autocomplete="username" autofocus>
+   <label for="password">Password</label>
+   <input id="password" name="password" type="password" autocomplete="current-password">
+   <button type="submit">Sign in</button>
+   <div class="err">{{ error }}</div>
+ </form>
+</body></html>"""
+
+
+@app.before_request
+def _require_login():
+    if not LOGIN_ENABLED:
+        return None  # gate disabled until a username + password are configured
+    path = request.path
+    if path in ("/login", "/logout", "/favicon.ico") or path.startswith("/static"):
+        return None
+    if session.get("authed"):
+        return None
+    if path.startswith("/api/"):
+        return jsonify({"error": "authentication required"}), 401
+    return redirect("/login")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not LOGIN_ENABLED:
+        return redirect("/")
+    error = ""
+    if request.method == "POST":
+        u = request.form.get("username", "")
+        pw = request.form.get("password", "")
+        # constant-time comparison, so response timing can't leak the password
+        if hmac.compare_digest(u, DASHBOARD_USER) and hmac.compare_digest(pw, DASHBOARD_PASSWORD):
+            session.permanent = True
+            session["authed"] = True
+            return redirect("/")
+        error = "Incorrect username or password."
+    return render_template_string(LOGIN_PAGE, error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 
 # ============================================================

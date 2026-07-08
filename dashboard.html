@@ -324,6 +324,7 @@ const CATEGORY_MAP = {
 async function pollState(){
   try{
     const resp = await fetch('/api/state', {cache:'no-store'});
+    if(resp.status===401){ window.location='/login'; return; }  // session expired -> sign in again
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     const data = await resp.json();
     cards = data.cards || [];
@@ -356,6 +357,7 @@ setupRealtime();
 async function postJSON(url, body){
   try{
     const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    if(resp.status===401){ window.location='/login'; return null; }  // session expired -> sign in again
     if(!resp.ok){ showToast('Action failed — check the server'); return null; }
     return await resp.json();
   }catch(err){
