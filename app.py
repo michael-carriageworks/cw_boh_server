@@ -17,7 +17,7 @@ api/index.py and vercel.json).
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
@@ -48,7 +48,9 @@ def init_db():
     conn.close()
 
 def now_iso():
-    return datetime.now().isoformat()
+    # UTC with an explicit offset, so browsers localise it correctly (the sync
+    # runs on GitHub's UTC servers; without the offset the time reads ~10h off).
+    return datetime.now(timezone.utc).isoformat()
 
 def log(db, text):
     db.execute("INSERT INTO notification_log (ts, text) VALUES (%s, %s)", (now_iso(), text))
@@ -69,8 +71,15 @@ def index():
 def api_state():
     db = get_db()
 
+    # Fetch ALL tech assignments in a single query and group them by card in
+    # Python. (Previously this ran one query per card — fine on a local SQLite
+    # file, but ~144 network round-trips to a cloud database, which timed out.)
+    techs_by_card = {}
+    for t in db.execute("SELECT card_id, tech_name, source FROM tech_assignments"):
+        techs_by_card.setdefault(t["card_id"], []).append(t)
+
     cards = []
-    for row in db.execute("SELECT * FROM cards ORDER BY date, start"):
+    for row in db.execute("SELECT * FROM cards ORDER BY date, start").fetchall():
         card = dict(row)
         card["locationOptions"] = json.loads(card.pop("location_options") or "[]")
         card["category"] = {
@@ -85,9 +94,7 @@ def api_state():
             or (card["locationOptions"][0] if len(card["locationOptions"]) == 1 else None)
             or ("TBC" if not card["locationOptions"] else "Multiple — TBC")
         )
-        techs = db.execute(
-            "SELECT tech_name, source FROM tech_assignments WHERE card_id = %s", (card["id"],)
-        ).fetchall()
+        techs = techs_by_card.get(card["id"], [])
         card["techsAuto"] = [t["tech_name"] for t in techs if t["source"] == "deputy"]
         card["techsManual"] = [t["tech_name"] for t in techs if t["source"] == "manual" and t["tech_name"] not in card["techsAuto"]]
         cards.append(card)

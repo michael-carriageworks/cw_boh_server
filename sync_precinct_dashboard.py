@@ -95,7 +95,7 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
     if removed_ids:
         conn.execute(
             "INSERT INTO notification_log (ts, text) VALUES (%s, %s)",
-            (datetime.now().isoformat(), f"{len(removed_ids)} event(s) removed from Smartsheet, no longer on the dashboard"),
+            (datetime.now(timezone.utc).isoformat(), f"{len(removed_ids)} event(s) removed from Smartsheet, no longer on the dashboard"),
         )
 
     for c in cards:
@@ -124,7 +124,7 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
         })
 
     conn.execute("DELETE FROM tech_assignments WHERE source = 'deputy'")
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     for card_id, names in tech_assignments.items():
         for name in names:
             conn.execute(
@@ -673,7 +673,7 @@ def main():
     tech_assignments, unmatched = match_shifts_to_cards(shifts, cards, known_projects)
     print(f"  Matched shifts onto {len(tech_assignments)} cards; {len(unmatched)} shifts need manual review")
 
-    generated_at = datetime.now().isoformat()
+    generated_at = datetime.now(timezone.utc).isoformat()
     write_to_database(cards, tech_assignments, unmatched, generated_at)
     print("  Wrote results to the Supabase database")
 
