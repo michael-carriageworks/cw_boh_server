@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;background:#fbfaf7;}</style>
+<title>BOH Dashboard — IT Brief</title>
+<style>
+  :root{
+    --paper:#fbfaf7;
+    --ink:#1e2024;
+    --slate:#585d66;
+    --faint:#8a8f98;
+    --line:#e6e1d8;
+    --line-strong:#d4cdc0;
+    --panel:#ffffff;
+    --accent:#a8611b;        /* restrained ochre — echoes the dashboard */
+    --accent-soft:#f3e9dc;
+    --good:#2f7351;
+    --good-soft:#e7f1eb;
+    --warn:#9a6412;
+    --warn-soft:#f6ecd9;
+    --alert:#a63a2c;
+  }
+  *{box-sizing:border-box}
+  .doc{
+    max-width:820px;margin:0 auto;padding:0 24px 96px;
+    color:var(--ink);background:var(--paper);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .doc h1,.doc h2,.doc h3{
+    font-family:Georgia,"Iowan Old Style",Charter,"Times New Roman",serif;
+    line-height:1.2;text-wrap:balance;font-weight:600;color:var(--ink);
+  }
+  .mono{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;}
+
+  /* Masthead */
+  .masthead{padding:56px 0 28px;border-bottom:3px solid var(--ink);}
+  .eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 14px;}
+  .masthead h1{font-size:38px;margin:0 0 10px;}
+  .lede{font-size:18px;color:var(--slate);margin:0;max-width:60ch;}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;}
+  .chip{font-size:12.5px;padding:5px 11px;border:1px solid var(--line-strong);border-radius:999px;color:var(--slate);background:var(--panel);}
+  .chip strong{color:var(--ink);font-weight:600;}
+  .chip.proto{background:var(--warn-soft);border-color:#e6d3ad;color:var(--warn);}
+
+  /* Sections */
+  section{padding-top:40px;}
+  .sec-head{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:18px;}
+  .sec-num{font-family:ui-monospace,Menlo,monospace;font-size:14px;color:var(--accent);font-weight:700;padding-top:3px;}
+  .sec-head h2{font-size:24px;margin:0;}
+  p{margin:0 0 14px;}
+  .doc a{color:var(--accent);}
+  ul{margin:0 0 14px;padding-left:20px;}
+  li{margin:0 0 7px;}
+  strong{font-weight:600;}
+  .lead-note{color:var(--slate);}
+
+  /* At-a-glance */
+  .glance{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 22px;margin-top:26px;}
+  .glance dl{display:grid;grid-template-columns:150px 1fr;gap:0;margin:0;}
+  .glance dt{padding:13px 0;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-top:1px solid var(--line);font-weight:600;}
+  .glance dd{padding:13px 0;margin:0;border-top:1px solid var(--line);color:var(--ink);}
+  .glance dl>dt:first-of-type,.glance dl>dt:first-of-type + dd{border-top:0;}
+
+  /* Flow diagram */
+  .flow{overflow-x:auto;margin:6px 0 8px;padding-bottom:6px;}
+  .flow-row{display:flex;align-items:stretch;gap:0;min-width:680px;}
+  .stage{display:flex;flex-direction:column;justify-content:center;gap:8px;}
+  .node{background:var(--panel);border:1px solid var(--line-strong);border-radius:10px;padding:12px 14px;min-width:118px;text-align:center;}
+  .node b{display:block;font-size:14.5px;color:var(--ink);}
+  .node small{display:block;color:var(--faint);font-size:11.5px;line-height:1.35;margin-top:3px;}
+  .node.src{background:var(--accent-soft);border-color:#e2cfb4;min-width:150px;padding:9px 12px;}
+  .ro{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);text-align:center;font-weight:700;}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:22px;padding:0 6px;flex:0 0 auto;}
+  .flow-caption{font-size:13.5px;color:var(--slate);background:var(--good-soft);border-left:3px solid var(--good);padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;}
+
+  /* Tables */
+  .tbl-wrap{overflow-x:auto;margin:4px 0 16px;border:1px solid var(--line);border-radius:10px;}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:520px;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{background:#f4efe7;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--slate);font-weight:700;}
+  tr:last-child td{border-bottom:0;}
+  td .mono{font-size:13px;color:var(--accent);}
+
+  /* Security cards */
+  .cards{display:grid;gap:12px;margin:6px 0 8px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:0 10px 10px 0;padding:14px 18px;}
+  .card.good{border-left-color:var(--good);}
+  .card.consider{border-left-color:var(--warn);}
+  .card .tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:4px;}
+  .card.good .tag{color:var(--good);}
+  .card.consider .tag{color:var(--warn);}
+  .card h3{font-size:16px;margin:0 0 5px;font-family:inherit;font-weight:650;}
+  .card p{margin:0;color:var(--slate);font-size:14.5px;}
+
+  .callout{background:var(--accent-soft);border:1px solid #e2cfb4;border-radius:10px;padding:16px 20px;margin:8px 0 4px;}
+  .callout p{margin:0;color:#6d4416;font-size:14.5px;}
+
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:13px;}
+  @media (max-width:560px){
+    .masthead h1{font-size:30px;}
+    .glance dl{grid-template-columns:1fr;}
+    .glance dd{padding-top:0;border-top:0;}
+    .glance dt{border-top:1px solid var(--line);padding-bottom:2px;}
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <header class="masthead">
+    <p class="eyebrow">Infrastructure &amp; Security Brief</p>
+    <h1>Back-of-House Technician Dashboard</h1>
+    <p class="lede">A plain-language overview of how the dashboard is built, what information it uses, and the security considerations relevant to an IT review.</p>
+    <div class="meta">
+      <span class="chip proto"><strong>Status:</strong>&nbsp;Prototype (in testing)</span>
+      <span class="chip"><strong>Owner:</strong>&nbsp;Carriageworks (Project manager: Michael)</span>
+      <span class="chip"><strong>Prepared:</strong>&nbsp;9 July 2026</span>
+      <span class="chip"><strong>Live at:</strong>&nbsp;cw-boh-server.vercel.app</span>
+    </div>
+  </header>
+
+  <div class="glance">
+    <dl>
+      <dt>In one line</dt>
+      <dd>A shared, live schedule board showing which technicians are rostered to which events across the precinct each week.</dd>
+      <dt>Data used</dt>
+      <dd>Event schedule from <strong>Smartsheet</strong> and staff rosters from <strong>Deputy</strong> — both pulled <strong>read-only</strong>.</dd>
+      <dt>Where it runs</dt>
+      <dd>Hosted database (Supabase) + web app (Vercel), with an automated sync job on GitHub. No on-premise servers.</dd>
+      <dt>Data sensitivity</dt>
+      <dd>Event schedules and staff roster details (names, shift times, roles). <strong>No</strong> financial, payment, or customer data.</dd>
+      <dt>Access control</dt>
+      <dd>A single shared login is being switched on. Per-person accounts are a planned upgrade.</dd>
+    </dl>
+  </div>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>What the dashboard is for</h2></div>
+    <p>The dashboard is a shared screen for the Back-of-House (BOH) technical team. It runs on the display in the tech cage and is accessible online to all producers and senior staff, giving everyone the same live picture of the working week without anyone having to refresh or cross-check spreadsheets.</p>
+    <p>Its features point to its purpose:</p>
+    <ul>
+      <li>A <strong>weekly Mon–Sun grid of events</strong>, colour-coded by activity type (bump in, rehearsal, performance, bump out, and so on), each showing its times, location, and the technicians rostered to it.</li>
+      <li>An <strong>auto-match</strong> between rostered shifts and events, so a technician's shift is attached to the right event automatically (marked with a "Deputy" tag), with anything ambiguous set aside for a producer to confirm.</li>
+      <li>A <strong>producer console</strong> for assigning technicians, confirming which location an event is in, adding ad-hoc events, and logging tasks.</li>
+      <li>"On now", "On later today", and "Tasks for today" summary panels for at-a-glance awareness.</li>
+    </ul>
+    <div class="callout">
+      <p><strong>This is a working prototype, currently in testing.</strong> Expect some visual/layout tweaks over the coming week as it's refined with the team. A few panels — weather, lock-up countdown, warden and evacuation status, and facilities notices — are clearly-labelled placeholders awaiting real data sources.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>How it fits together</h2></div>
+    <p>Two existing systems feed the dashboard. Every 15 minutes, an automated job reads from both, matches the data together, and stores the result in a cloud database that the dashboard displays.</p>
+
+    <div class="flow" role="img" aria-label="Data flows from Smartsheet and Deputy into a sync job, then into the Supabase database, then to the Vercel web app, then to browsers.">
+      <div class="flow-row">
+        <div class="stage">
+          <div class="node src"><b>Smartsheet</b><small>event schedule</small></div>
+          <div class="node src"><b>Deputy</b><small>staff rosters</small></div>
+          <div class="ro">read-only</div>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><div class="node"><b>Sync job</b><small>GitHub Actions<br>every 15 min</small></div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><div class="node"><b>Database</b><small>Supabase<br>AWS Mumbai</small></div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><div class="node"><b>Web app</b><small>Vercel<br>hosting + API</small></div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><div class="node"><b>Browsers</b><small>cage display +<br>producer devices</small></div></div>
+      </div>
+    </div>
+    <div class="flow-caption">Live updates are pushed from the database straight to every open browser, so a change made on one device appears on the others within a second or two — no refresh needed.</div>
+
+    <p style="margin-top:16px">Producer changes (assigning a technician, confirming a location, adding a task) are saved to the database and are deliberately preserved when the next automated sync runs, so edits are never overwritten.</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>What information is pulled</h2></div>
+    <p>Only the fields needed for scheduling are read. Both sources are accessed <strong>read-only</strong> — the dashboard cannot create, change, or delete anything in Smartsheet or Deputy.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>What is read</th><th>Access</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Smartsheet</strong><br><span class="lead-note" style="font-size:13px">event schedule</span></td>
+            <td>A single report ("Precinct Ops Agenda"): project name, activity, activity start/end times, date, location, notes, and expected headcount.</td>
+            <td>Read-only (data is only ever retrieved, never written back).</td>
+          </tr>
+          <tr>
+            <td><strong>Deputy</strong><br><span class="lead-note" style="font-size:13px">staff rosters</span></td>
+            <td>Rostered shifts for the 16 BOH technical role-locations only: employee name, shift times, and shift notes. Non-BOH areas are filtered out.</td>
+            <td>Read-only (rosters are only retrieved, never modified).</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lead-note">The two are matched by project name, date, and overlapping times to work out which technician is on which event. Anything that can't be matched confidently is flagged for a producer to resolve, rather than guessed.</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Hosting &amp; the platforms involved</h2></div>
+    <p>The dashboard runs entirely on managed cloud services — nothing runs on a Carriageworks server or an individual's machine. The third parties involved are:</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Platform</th><th>Role</th><th>What it holds</th></tr></thead>
+        <tbody>
+          <tr><td><strong>GitHub</strong> <span class="lead-note">(Microsoft)</span></td><td>Stores the source code and runs the every-15-minutes sync job.</td><td>Code only. The repository is public but contains <strong>no credentials</strong> (verified).</td></tr>
+          <tr><td><strong>Supabase</strong> <span class="lead-note">(on AWS)</span></td><td>The database — the single source of truth the dashboard reads from.</td><td>Event and roster data, incl. staff names. Hosted in AWS <strong>Mumbai (ap-south-1)</strong>.</td></tr>
+          <tr><td><strong>Vercel</strong></td><td>Hosts the web page and its data interface (API).</td><td>No data at rest; serves the app and passes requests to the database.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>API tokens and the database password are stored as <strong>encrypted secrets</strong> inside GitHub and Vercel (and, for the Deputy token, inside the database itself) — never written into the code.</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Security considerations</h2></div>
+    <p class="lead-note">A candid summary for review — both the reassuring points and the items worth a decision.</p>
+    <div class="cards">
+      <div class="card good"><div class="tag">Strength</div><h3>Read-only to source systems</h3><p>The sync only ever <em>retrieves</em> from Smartsheet and Deputy. It has no capability to alter events or rosters, so the dashboard cannot corrupt the systems it draws from.</p></div>
+      <div class="card good"><div class="tag">Strength</div><h3>No credentials in the code</h3><p>All tokens and passwords live in encrypted platform settings. The public code repository was checked and contains no secrets.</p></div>
+      <div class="card good"><div class="tag">Strength</div><h3>Limited, non-sensitive data</h3><p>Scope is event schedules and technical rosters. No financial, payment, ticketing, or customer data is involved.</p></div>
+      <div class="card consider"><div class="tag">Consideration</div><h3>Data residency — Mumbai</h3><p>The database currently sits in AWS Mumbai (India). Rosters include staff <strong>names</strong> (personal information). If Australian data-residency policy requires it, the database can be relocated to AWS Sydney with a short migration.</p></div>
+      <div class="card consider"><div class="tag">Consideration</div><h3>Shared login (for now)</h3><p>Access is being gated by a single shared username/password. There are no per-person accounts yet, so individual access can't be revoked separately. Per-user accounts are the recommended next step before wider rollout.</p></div>
+      <div class="card consider"><div class="tag">Consideration</div><h3>Smartsheet account &amp; permissions</h3><p>The event data is currently pulled using the <strong>producer Smartsheet account</strong> — an editor-level account with access to <em>all</em> of the producers' Smartsheet files, which is far broader than the dashboard needs. <strong>Recommended:</strong> create a separate Smartsheet account used <em>only</em> by the dashboard, give it <strong>read-only</strong> permission, and share <strong>just the single "Precinct Ops Agenda" report</strong> with it. That way the dashboard can see exactly what it needs — and nothing else in Smartsheet.</p></div>
+      <div class="card consider"><div class="tag">Consideration</div><h3>Public source code</h3><p>The code is publicly viewable (which keeps the automated sync free). It exposes no credentials, but IT should be comfortable with the application logic being visible.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Access granted to Claude (the AI assistant)</h2></div>
+    <p>The dashboard was built with Claude Code, which runs locally on Michael's Mac and acts only when he invokes it, using credentials he explicitly provided during setup. For transparency, this is the access that provisioning created:</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Application</th><th>What Claude can do</th><th>How it was granted</th></tr></thead>
+        <tbody>
+          <tr><td><strong>GitHub</strong></td><td>Read and write the project's repositories and manage its automated jobs and encrypted secrets, for the <span class="mono">michael-carriageworks</span> account.</td><td>Michael signed the GitHub CLI in on his Mac (scopes: <span class="mono">repo, workflow, read:org, gist</span>).</td></tr>
+          <tr><td><strong>Supabase</strong></td><td>Full read/write to the dashboard's <em>database</em> (used to create the tables and load data). No access to the Supabase account or console itself.</td><td>Michael provided the database connection string.</td></tr>
+          <tr><td><strong>Vercel</strong></td><td><strong>None.</strong> Michael performed all Vercel steps himself; Claude only tested the public web address.</td><td>—</td></tr>
+          <tr><td><strong>Deputy</strong></td><td>Read-only roster access, used by the automated sync. No interactive/console access, no write ability.</td><td>A one-time Deputy authorisation set up by Michael.</td></tr>
+          <tr><td><strong>Smartsheet</strong></td><td>The dashboard reads via a read-only token. Separately, a Smartsheet integration is connected to Claude that is <em>capable</em> of read <strong>and write</strong> — it was <strong>not used</strong> for this project, but is worth reviewing.</td><td>Token in config; plus a Smartsheet connector previously linked to Claude by Michael.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lead-note">Recommended housekeeping: if the Smartsheet connector isn't needed for other work, disconnecting it removes Claude's write capability there; and the GitHub sign-in can be revoked at any time from GitHub's settings.</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Room to grow — other departments</h2></div>
+    <p>The dashboard is currently focused on Back-of-House because the roster feed is filtered to the 16 BOH technical roles. The underlying design is department-agnostic, though.</p>
+    <p>If <strong>Front-of-House</strong> felt this would be a useful tool for them, it can scale with a configuration change rather than a rebuild: the roster filter is simply pointed at the FOH roles instead, and FOH staff rosters flow in in place of the current BOH-focused view. The event schedule (Smartsheet) is already shared across the precinct, so no new data source is needed. Each department could ultimately have its own filtered view drawn from the same foundation.</p>
+  </section>
+
+  <footer>
+    <p>Prepared for internal review by the Carriageworks IT team · Prototype, subject to change · Questions can be directed to Michael.</p>
+  </footer>
+
+</div>
+</body>
+</html>

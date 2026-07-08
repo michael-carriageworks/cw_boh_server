@@ -5,7 +5,7 @@
     {
       "src": "app.py",
       "use": "@vercel/python",
-      "config": { "includeFiles": ["dashboard.html", "schema.sql", "db.py"] }
+      "config": { "includeFiles": ["dashboard.html", "brief.html", "schema.sql", "db.py"] }
     }
   ],
   "routes": [

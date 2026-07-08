@@ -109,8 +109,8 @@ def _require_login():
     if not LOGIN_ENABLED:
         return None  # gate disabled until a username + password are configured
     path = request.path
-    if path in ("/login", "/logout", "/favicon.ico") or path.startswith("/static"):
-        return None
+    if path in ("/login", "/logout", "/favicon.ico", "/brief") or path.startswith("/static"):
+        return None  # /brief (the infrastructure brief) is intentionally public
     if session.get("authed"):
         return None
     if path.startswith("/api/"):
@@ -147,6 +147,12 @@ def logout():
 @app.route("/")
 def index():
     return send_from_directory(STATIC_DIR, "dashboard.html")
+
+
+@app.route("/brief")
+def brief():
+    # Public, read-only infrastructure & security brief (shareable link for staff/IT).
+    return send_from_directory(STATIC_DIR, "brief.html")
 
 
 # ============================================================
