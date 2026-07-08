@@ -32,7 +32,9 @@ def get_connection():
             "DATABASE_URL is not set. Point it at your Supabase Postgres "
             "connection string (Supabase dashboard -> Project Settings -> Database)."
         )
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    # prepare_threshold=None disables implicit prepared statements, which keeps
+    # us compatible with Supabase's transaction-mode connection pooler (Supavisor).
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None)
 
 
 def run_schema(conn, schema_path):
