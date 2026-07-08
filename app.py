@@ -62,26 +62,6 @@ def index():
     return send_from_directory(STATIC_DIR, "dashboard.html")
 
 
-# Temporary diagnostic endpoint — reports whether the database is reachable
-# without ever exposing the password. Safe to remove once deployment is stable.
-@app.route("/api/diag")
-def api_diag():
-    info = {}
-    url = os.environ.get("DATABASE_URL")
-    info["database_url_present"] = bool(url)
-    if url:
-        info["db_host"] = url.split("@")[-1] if "@" in url else "(unparseable)"
-    try:
-        db = get_connection()
-        db.execute("select 1").fetchone()
-        db.close()
-        info["connect"] = "ok"
-    except Exception as e:
-        info["connect"] = "error"
-        info["error"] = str(e)[:300]
-    return jsonify(info)
-
-
 # ============================================================
 # READ: the full state the dashboard needs, in one call
 # ============================================================
