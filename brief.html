@@ -99,6 +99,16 @@
   .callout{background:var(--accent-soft);border:1px solid #e2cfb4;border-radius:10px;padding:16px 20px;margin:8px 0 4px;}
   .callout p{margin:0;color:#6d4416;font-size:14.5px;}
 
+  /* Dashboard CTA */
+  .cta-block{margin-top:48px;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+             padding:28px 26px;text-align:center;}
+  .cta-block h3{font-size:19px;margin:0 0 6px;}
+  .cta-block p{margin:0 auto 18px;color:var(--slate);font-size:14.5px;max-width:52ch;}
+  .cta-btn{display:inline-block;background:var(--accent);color:#fff !important;text-decoration:none;
+           font-weight:700;font-size:15px;letter-spacing:.03em;padding:13px 30px;border-radius:8px;}
+  .cta-btn:hover{background:#8f5116;}
+  .cta-note{margin-top:12px !important;font-size:12.5px !important;color:var(--faint) !important;}
+
   footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:13px;}
   @media (max-width:560px){
     .masthead h1{font-size:30px;}
@@ -255,6 +265,13 @@
     <p>The dashboard is currently focused on Back-of-House because the roster feed is filtered to the 16 BOH technical roles. The underlying design is department-agnostic, though.</p>
     <p>If <strong>Front-of-House</strong> felt this would be a useful tool for them, it can scale with a configuration change rather than a rebuild: the roster filter is simply pointed at the FOH roles instead, and FOH staff rosters flow in in place of the current BOH-focused view. The event schedule (Smartsheet) is already shared across the precinct, so no new data source is needed. Each department could ultimately have its own filtered view drawn from the same foundation.</p>
   </section>
+
+  <div class="cta-block">
+    <h3>Ready to see it in action?</h3>
+    <p>The live dashboard shows this week's events, rostered technicians, and tasks — sign in with the shared staff login to explore.</p>
+    <a class="cta-btn" href="https://cw-boh-server.vercel.app/login">Explore the dashboard&nbsp;&nbsp;→</a>
+    <p class="cta-note">Don't have the login details? Ask Michael.</p>
+  </div>
 
   <footer>
     <p>Prepared for internal review by the Carriageworks IT team · Prototype, subject to change · Questions can be directed to Michael.</p>
