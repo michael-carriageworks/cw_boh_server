@@ -1,0 +1,7 @@
+.env
+deputy_token_store.json
+boh_dashboard.db
+__pycache__/
+*.pyc
+server.log
+server.error.log
