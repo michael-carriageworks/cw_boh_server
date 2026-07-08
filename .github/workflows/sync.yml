@@ -5,10 +5,10 @@ name: Sync Smartsheet + Deputy
 # then sees the update instantly via Supabase realtime.
 on:
   schedule:
-    # Every 30 minutes. GitHub's free tier for a PRIVATE repo includes ~2,000
-    # minutes/month; a 30-minute cadence stays comfortably inside that. To run
-    # more often (e.g. */15) the repo needs to be public or on a paid plan.
-    - cron: "*/30 * * * *"
+    # Every 15 minutes. This repo is public, so GitHub Actions minutes are
+    # unlimited/free — a 15-minute cadence costs nothing. (On a private repo the
+    # free tier is ~2,000 min/month, which this would exceed.)
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}   # lets you also trigger a sync by hand from the Actions tab
 
 # If a sync is somehow still running when the next one fires, skip the new one
