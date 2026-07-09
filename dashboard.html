@@ -87,6 +87,7 @@
   .event-card.cat-none{border-left-color:var(--dim);opacity:0.55;}
   .event-card.cat-other{border-left-color:var(--text-3);}
   .event-card.is-manual{border-style:dashed;}
+  .event-card.is-past{opacity:0.4;filter:grayscale(0.5);}
 
   .ev-time{font-family:var(--font-mono);font-size:11px;color:var(--amber-strong);font-weight:700;}
   .ev-title{font-size:12.5px;font-weight:600;margin:2px 0 3px;line-height:1.25;}
@@ -471,9 +472,9 @@ function staffChips(c){
     let dim = false, note = '';
     if(isToday && s!==null && e!==null){
       const off = clockStatus[p.name];
-      if(off && off.status==='off'){ dim = true; note = ` · left ${off.off_at}`; }
-      else if(nowMin < s){ dim = true; note = ` · from ${p.start}`; }
-      else if(nowMin >= e){ dim = true; note = ` · until ${p.end}`; }
+      if(off && off.status==='off'){ dim = true; }              // clocked off — dim, no time text
+      else if(nowMin < s){ dim = true; note = ` · from ${p.start}`; }  // taking over later
+      else if(nowMin >= e){ dim = true; }                        // shift finished — dim, no time text
     }
     return { html:`<span class="chip ${cls} ${dim?'off-duty':''}">${chipLabel(p, note)}</span>`, dim };
   });
@@ -494,12 +495,16 @@ function renderWeekGrid(){
   grid.classList.toggle('focused', !!focusedDay);
   const visibleDays = focusedDay ? days.filter(d=>dateKey(d)===focusedDay) : days;
 
+  const nowM = (()=>{ const n=new Date(); return n.getHours()*60+n.getMinutes(); })();
   grid.innerHTML = visibleDays.map(d=>{
     const key = dateKey(d);
     const dayCards = cards.filter(c=>c.date===key).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
     const cardsHtml = dayCards.length ? dayCards.map(c=>{
+      // A finished event on TODAY stays visible but dulled; past days already
+      // drop off the rolling window, so this only ever applies to today.
+      const isPast = key===todayKey() && toMin(c.end)!==null && toMin(c.end)<=nowM;
       return `
-        <div class="event-card cat-${c.category.key} ${c.isManual?'is-manual':''}">
+        <div class="event-card cat-${c.category.key} ${c.isManual?'is-manual':''} ${isPast?'is-past':''}">
           <div class="ev-time">${c.start||'—'} – ${c.end||'—'}</div>
           <div class="ev-title">${c.project}${c.needsReview?' <span style="color:var(--amber-strong);font-size:10px;">(check)</span>':''}</div>
           <div class="ev-cat-badge">${c.category.label}</div>
@@ -536,6 +541,7 @@ function renderTechPresence(){
   const onNow=[], onLater=[], seenNow=new Set(), seenLater=new Set();
   todaysCards.forEach(c=>{
     (c.staff||[]).forEach(p=>{
+      if(p.role==='fohm') return; // presence panels are technicians only — FOHMs stay on the event cards
       const s = toMin(p.start)!==null ? toMin(p.start) : toMin(c.start);
       const e = toMin(p.end)!==null ? toMin(p.end)  : toMin(c.end);
       if(s===null || e===null) return;
