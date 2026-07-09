@@ -63,6 +63,16 @@ DEPUTY_BOH_LOCATION_NAMES = [
 ]
 DEPUTY_TOKEN_STORE = os.environ.get("DEPUTY_TOKEN_STORE", "deputy_token_store.json")
 
+# Front of House Manager role-locations. Techs liaise with the FOHM during
+# events, so FOHM shifts are pulled too and shown on cards, styled distinctly.
+# ("FOHM - Shadow" is deliberately NOT included — that's a training role.)
+DEPUTY_FOHM_LOCATION_NAMES = [
+    n.strip() for n in os.environ.get(
+        "DEPUTY_FOHM_LOCATION_NAMES",
+        "FOHM : FOH Manager,TRA : FOH Manager"
+    ).split(",") if n.strip()
+]
+
 from db import get_connection, run_schema
 
 
@@ -74,7 +84,7 @@ def ensure_schema(conn):
     to call every time regardless of whether the tables already exist."""
     run_schema(conn, SCHEMA_PATH)
 
-def write_to_database(cards, tech_assignments, unmatched, generated_at):
+def write_to_database(cards, tech_assignments, unmatched, generated_at, clock_status):
     """
     Upserts everything into the shared SQLite database, carefully preserving:
       - resolved_location on cards a producer has already picked
@@ -125,20 +135,21 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
 
     conn.execute("DELETE FROM tech_assignments WHERE source = 'deputy'")
     now = datetime.now(timezone.utc).isoformat()
-    for card_id, names in tech_assignments.items():
-        for name in names:
+    for card_id, assigned in tech_assignments.items():
+        for a in assigned:
             conn.execute(
-                "INSERT INTO tech_assignments (card_id, tech_name, source, assigned_at) VALUES (%s, %s, 'deputy', %s) ON CONFLICT DO NOTHING",
-                (card_id, name, now),
+                "INSERT INTO tech_assignments (card_id, tech_name, source, assigned_at, role, shift_start, shift_end) "
+                "VALUES (%s, %s, 'deputy', %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                (card_id, a["name"], now, a["role"], a["start"], a["end"]),
             )
 
     for u in unmatched:
         conn.execute("""
-            INSERT INTO unmatched_shifts (shift_id, employee, date, start, "end", note, reason, resolved)
-            VALUES (%(shift_id)s, %(employee)s, %(date)s, %(start)s, %(end)s, %(note)s, %(reason)s, 0)
+            INSERT INTO unmatched_shifts (shift_id, employee, date, start, "end", note, reason, resolved, role)
+            VALUES (%(shift_id)s, %(employee)s, %(date)s, %(start)s, %(end)s, %(note)s, %(reason)s, 0, %(role)s)
             ON CONFLICT(shift_id) DO UPDATE SET
                 employee=excluded.employee, date=excluded.date, start=excluded.start,
-                "end"=excluded."end", note=excluded.note, reason=excluded.reason
+                "end"=excluded."end", note=excluded.note, reason=excluded.reason, role=excluded.role
                 -- deliberately NOT resetting `resolved` — a producer's manual link survives resync
         """, u)
 
@@ -146,6 +157,11 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at):
         "INSERT INTO meta (key, value) VALUES ('last_synced_at', %s) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (generated_at,),
+    )
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('clock_status', %s) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (json.dumps(clock_status),),
     )
 
     conn.commit()
@@ -457,16 +473,15 @@ def normalize_for_match(s):
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
-def find_operational_unit_ids(target_names):
+def find_operational_unit_ids(target_names, units, label):
     """
     Returns {name: id} for every target_name that matches a real Deputy
-    location. Any name that doesn't match anything is reported clearly
-    rather than silently skipped or silently guessed — a missing role
-    would mean real BOH staff quietly vanish from the dashboard.
+    location (from the prefetched `units` list). Any name that doesn't match
+    anything is reported clearly rather than silently skipped or silently
+    guessed — a missing role would mean real staff quietly vanish from the
+    dashboard.
     """
-    units = fetch_deputy_operational_units()
     by_norm_name = {normalize_for_match(u.get("OperationalUnitName")): u["Id"] for u in units}
-    print(f"  Found {len(units)} Deputy location(s) total")
 
     found = {}
     not_found = []
@@ -478,13 +493,16 @@ def find_operational_unit_ids(target_names):
             not_found.append(target)
 
     if not_found:
-        print(f"  WARNING: could not find these BOH locations in Deputy — check spelling/dashes against the real names: {not_found}")
+        print(f"  WARNING: could not find these {label} locations in Deputy — check spelling/dashes against the real names: {not_found}")
         print(f"  All Deputy location names found: {[u.get('OperationalUnitName') for u in units]}")
 
-    if not found:
-        sys.exit("None of the configured BOH location names matched anything in Deputy — check DEPUTY_BOH_LOCATION_NAMES in .env.")
-
     return found
+
+
+def classify_role(location_name):
+    """'senior' for the Senior Technician role-location, 'tech' for the rest of
+    BOH. (FOHM locations are classified separately where they're looked up.)"""
+    return "senior" if "senior technician" in normalize_for_match(location_name) else "tech"
 
 
 def fetch_deputy_employees():
@@ -516,17 +534,15 @@ def fetch_deputy_employees():
         employees[emp_id] = name or f"Employee #{emp_id}"
     return employees
 
-def fetch_deputy_shifts(start_date, end_date, boh_unit_ids):
+def fetch_deputy_shifts(start_date, end_date, unit_roles, employees):
     """
-    boh_unit_ids: set of OperationalUnit IDs considered "BOH" for this
-    dashboard. Filtering happens client-side (in Python) rather than via
-    a Deputy query filter matching multiple values at once, since that
-    query syntax hasn't been confirmed to exist — safer to pull the date
-    range once and filter here than to guess at unverified API behaviour.
+    unit_roles: {OperationalUnit id: 'senior'|'tech'|'fohm'} — the set of
+    role-locations this dashboard cares about, with the role each one implies.
+    Filtering happens client-side (in Python) rather than via a Deputy query
+    filter matching multiple values at once, since that query syntax hasn't
+    been confirmed to exist — safer to pull the date range once and filter
+    here than to guess at unverified API behaviour.
     """
-    employees = fetch_deputy_employees()
-    print(f"  Pulled {len(employees)} Deputy employee records")
-
     url = f"{DEPUTY_BASE}/resource/Roster/QUERY"
     payload = {
         "search": {
@@ -537,11 +553,12 @@ def fetch_deputy_shifts(start_date, end_date, boh_unit_ids):
     resp = requests.post(url, headers=DEPUTY_HEADERS, json=payload)
     resp.raise_for_status()
     all_items = resp.json()
-    print(f"  Pulled {len(all_items)} total shifts across all locations before BOH filtering")
+    print(f"  Pulled {len(all_items)} total shifts across all locations before filtering")
 
     shifts = []
     for item in all_items:
-        if item.get("OperationalUnit") not in boh_unit_ids:
+        role = unit_roles.get(item.get("OperationalUnit"))
+        if role is None:
             continue
         raw_employee = item.get("Employee")
         if isinstance(raw_employee, dict):
@@ -555,8 +572,57 @@ def fetch_deputy_shifts(start_date, end_date, boh_unit_ids):
             "start": unix_to_local_hhmm(item.get("StartTime"), date_field),
             "end": unix_to_local_hhmm(item.get("EndTime"), date_field),
             "note": item.get("Comment") or item.get("ShiftNote") or "",
+            "role": role,
         })
     return shifts
+
+
+def fetch_deputy_clock_status(today_iso, employees):
+    """
+    Who has actually clocked on/off today, from Deputy Timesheets (verified
+    against the live API: Employee is a numeric id, StartTime/EndTime are Unix
+    timestamps, IsInProgress is truthy while someone is clocked on).
+
+    Returns {employee display name: {"status": "on"}} for people currently
+    clocked on, or {"status": "off", "off_at": "HH:MM"} for people who have
+    clocked off their last timesheet of the day. People who haven't clocked on
+    at all today simply aren't in the result.
+
+    Deliberately defensive: if the Timesheet endpoint ever fails, the sync
+    carries on without clock data (the dashboard falls back to rostered times)
+    rather than losing the whole sync.
+    """
+    try:
+        url = f"{DEPUTY_BASE}/resource/Timesheet/QUERY"
+        payload = {"search": {"s1": {"field": "Date", "data": today_iso, "type": "eq"}}}
+        resp = requests.post(url, headers=DEPUTY_HEADERS, json=payload)
+        resp.raise_for_status()
+        items = resp.json()
+    except Exception as e:
+        print(f"  WARNING: could not fetch Deputy timesheets ({e}); skipping clock status this run")
+        return {}
+
+    by_employee = {}
+    for item in items:
+        if item.get("Discarded"):
+            continue
+        emp_id = item.get("Employee")
+        name = employees.get(emp_id, f"Employee #{emp_id}")
+        date_field = item.get("Date") or ""
+        entry = by_employee.setdefault(name, {"in_progress": False, "last_end": None})
+        if item.get("IsInProgress"):
+            entry["in_progress"] = True
+        end_hhmm = unix_to_local_hhmm(item.get("EndTime"), date_field) if item.get("EndTime") else None
+        if end_hhmm and (entry["last_end"] is None or end_hhmm > entry["last_end"]):
+            entry["last_end"] = end_hhmm
+
+    status = {}
+    for name, entry in by_employee.items():
+        if entry["in_progress"]:
+            status[name] = {"status": "on"}
+        elif entry["last_end"]:
+            status[name] = {"status": "off", "off_at": entry["last_end"]}
+    return status
 
 def shift_id_for(shift):
     """Stable ID so a resolved unmatched shift stays resolved across syncs,
@@ -602,7 +668,7 @@ def to_minutes(t):
 def match_shifts_to_cards(shifts, cards, known_projects):
     """
     Returns:
-      tech_assignments: {card_id: [employee names]}
+      tech_assignments: {card_id: [{"name", "role", "start", "end"} ...]}
       unmatched: [shift dicts that couldn't be confidently matched]
     """
     tech_assignments = {}
@@ -633,9 +699,12 @@ def match_shifts_to_cards(shifts, cards, known_projects):
                 s_start < c_end and s_end > c_start
             )
             if overlaps or confidence == "medium":
-                tech_assignments.setdefault(card["id"], [])
-                if shift["employee"] not in tech_assignments[card["id"]]:
-                    tech_assignments[card["id"]].append(shift["employee"])
+                assigned = tech_assignments.setdefault(card["id"], [])
+                if not any(a["name"] == shift["employee"] for a in assigned):
+                    assigned.append({
+                        "name": shift["employee"], "role": shift["role"],
+                        "start": shift["start"], "end": shift["end"],
+                    })
                 matched_any = True
 
         if not matched_any:
@@ -660,21 +729,45 @@ def main():
 
     known_projects = sorted(set(r["project"] for r in rows if r.get("project")))
 
-    print(f"  Looking up {len(DEPUTY_BOH_LOCATION_NAMES)} configured BOH locations in Deputy...")
-    boh_units = find_operational_unit_ids(DEPUTY_BOH_LOCATION_NAMES)
-    print(f"  Matched {len(boh_units)}/{len(DEPUTY_BOH_LOCATION_NAMES)} BOH locations: {list(boh_units.keys())}")
-    boh_unit_ids = set(boh_units.values())
+    units = fetch_deputy_operational_units()
+    print(f"  Found {len(units)} Deputy location(s) total")
+    boh_units = find_operational_unit_ids(DEPUTY_BOH_LOCATION_NAMES, units, "BOH")
+    if not boh_units:
+        sys.exit("None of the configured BOH location names matched anything in Deputy — check DEPUTY_BOH_LOCATION_NAMES in .env.")
+    print(f"  Matched {len(boh_units)}/{len(DEPUTY_BOH_LOCATION_NAMES)} BOH locations")
+    fohm_units = find_operational_unit_ids(DEPUTY_FOHM_LOCATION_NAMES, units, "FOHM")
+    print(f"  Matched {len(fohm_units)}/{len(DEPUTY_FOHM_LOCATION_NAMES)} FOH Manager locations: {list(fohm_units.keys())}")
 
-    start_date = datetime.now().strftime("%Y-%m-%d")
-    end_date = (datetime.now() + timedelta(days=DEPUTY_LOOKAHEAD_DAYS)).strftime("%Y-%m-%d")
-    shifts = fetch_deputy_shifts(start_date, end_date, boh_unit_ids)
-    print(f"  {len(shifts)} of those shifts are BOH ({start_date} to {end_date})")
+    # {unit id: role} — seniors and regular techs from the BOH list, FOHMs separately
+    unit_roles = {uid: classify_role(name) for name, uid in boh_units.items()}
+    unit_roles.update({uid: "fohm" for uid in fohm_units.values()})
+
+    # "Today" in the venue's timezone, NOT the server's — GitHub's runners are
+    # on UTC, which is a different date than Sydney for ~10 hours of every day.
+    try:
+        from zoneinfo import ZoneInfo
+        now_syd = datetime.now(ZoneInfo("Australia/Sydney"))
+    except Exception:
+        now_syd = datetime.now(timezone.utc) + timedelta(hours=10)
+    start_date = now_syd.strftime("%Y-%m-%d")
+    end_date = (now_syd + timedelta(days=DEPUTY_LOOKAHEAD_DAYS)).strftime("%Y-%m-%d")
+
+    employees = fetch_deputy_employees()
+    print(f"  Pulled {len(employees)} Deputy employee records")
+    shifts = fetch_deputy_shifts(start_date, end_date, unit_roles, employees)
+    n_fohm = sum(1 for s in shifts if s["role"] == "fohm")
+    n_senior = sum(1 for s in shifts if s["role"] == "senior")
+    print(f"  {len(shifts)} relevant shifts ({start_date} to {end_date}): {n_senior} senior, {n_fohm} FOHM, {len(shifts)-n_fohm-n_senior} tech")
+
+    clock_status = fetch_deputy_clock_status(start_date, employees)
+    n_on = sum(1 for v in clock_status.values() if v["status"] == "on")
+    print(f"  Clock status for today: {n_on} clocked on, {len(clock_status)-n_on} clocked off")
 
     tech_assignments, unmatched = match_shifts_to_cards(shifts, cards, known_projects)
     print(f"  Matched shifts onto {len(tech_assignments)} cards; {len(unmatched)} shifts need manual review")
 
     generated_at = datetime.now(timezone.utc).isoformat()
-    write_to_database(cards, tech_assignments, unmatched, generated_at)
+    write_to_database(cards, tech_assignments, unmatched, generated_at, clock_status)
     print("  Wrote results to the Supabase database")
 
 

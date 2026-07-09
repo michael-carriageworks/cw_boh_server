@@ -32,11 +32,18 @@ CREATE TABLE IF NOT EXISTS cards (
 
 -- Tech assignments: separate table since a card can have multiple techs,
 -- and we need to distinguish auto-matched-from-Deputy vs producer-added.
+-- role: 'senior' (Senior Technician), 'fohm' (FOH Manager), or 'tech' (everyone
+-- else). The cage display shows only seniors + FOHMs; producers see all.
+-- shift_start/shift_end: the person's rostered shift times ("HH:MM"), used to
+-- work out who is on duty right now vs taking over later.
 CREATE TABLE IF NOT EXISTS tech_assignments (
     card_id TEXT NOT NULL,
     tech_name TEXT NOT NULL,
     source TEXT NOT NULL CHECK(source IN ('deputy','manual')),
     assigned_at TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'tech',
+    shift_start TEXT,
+    shift_end TEXT,
     PRIMARY KEY (card_id, tech_name, source)
 );
 
@@ -62,8 +69,16 @@ CREATE TABLE IF NOT EXISTS unmatched_shifts (
     "end" TEXT,
     note TEXT,
     reason TEXT,
-    resolved INTEGER NOT NULL DEFAULT 0
+    resolved INTEGER NOT NULL DEFAULT 0,
+    role TEXT NOT NULL DEFAULT 'tech'
 );
+
+-- Column upgrades for databases created before these fields existed.
+-- ADD COLUMN IF NOT EXISTS makes them safe to run every time.
+ALTER TABLE tech_assignments ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'tech';
+ALTER TABLE tech_assignments ADD COLUMN IF NOT EXISTS shift_start TEXT;
+ALTER TABLE tech_assignments ADD COLUMN IF NOT EXISTS shift_end TEXT;
+ALTER TABLE unmatched_shifts ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'tech';
 
 CREATE TABLE IF NOT EXISTS notification_log (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -97,7 +97,26 @@
   .chip{font-size:10.5px;font-family:var(--font-mono);background:var(--bg-3);color:var(--text-1);padding:2px 7px;border-radius:20px;border:1px solid var(--line);}
   .chip.chip-auto{background:var(--teal-dim);color:#a9e6ec;border-color:transparent;}
   .chip.manual-tag{background:var(--purple-dim);color:#c8b8ee;border-color:transparent;}
+  .chip.chip-senior{background:rgba(242,160,42,0.16);color:#f2c07a;border-color:rgba(242,160,42,0.45);font-weight:600;}
+  .chip.chip-fohm{background:rgba(96,165,250,0.14);color:#93c5fd;border-color:rgba(96,165,250,0.45);font-weight:600;}
+  .chip.off-duty{opacity:0.42;font-weight:400;}
   .empty-day{color:var(--text-3);font-size:11px;padding:12px;font-style:italic;}
+
+  /* ---- Focused single-day view (double-click a day) ---- */
+  .week-grid.focused{grid-template-columns:1fr;}
+  .day-col{cursor:zoom-in;}
+  .day-col.day-focus{cursor:default;min-height:60vh;}
+  .day-focus .day-head{padding:14px 18px;}
+  .day-focus .day-head .dname{font-size:20px;}
+  .day-focus .day-head .ddate{font-size:13px;}
+  .day-focus .day-body{padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;align-content:start;}
+  .day-focus .event-card{padding:14px 16px;}
+  .day-focus .ev-time{font-size:16px;}
+  .day-focus .ev-title{font-size:16px;}
+  .day-focus .ev-meta{font-size:12.5px;}
+  .day-focus .chip{font-size:12px;padding:3px 10px;}
+  .day-focus .empty-day{font-size:14px;padding:24px;}
+  .focus-hint{font-size:11px;color:var(--text-3);margin-left:12px;font-weight:400;letter-spacing:0;text-transform:none;}
 
   .sidebar{display:flex;flex-direction:column;gap:14px;}
   .side-panel{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
@@ -206,11 +225,11 @@
 <div class="view active" id="view-cage">
   <div class="banner-note">Live shared dashboard — updates from Smartsheet, Deputy, and any producer device appear here automatically, no refresh needed.</div>
   <div class="week-header">
-    <h2 id="weekTitle">Week of —</h2>
+    <h2 id="weekTitle">—<span class="focus-hint">double-click a day to expand it</span></h2>
     <div class="week-nav">
-      <button class="nav-btn" onclick="changeWeek(-1)">&larr; Prev week</button>
-      <button class="nav-btn today" onclick="goToday()">This week</button>
-      <button class="nav-btn" onclick="changeWeek(1)">Next week &rarr;</button>
+      <button class="nav-btn" onclick="changeWeek(-1)">&larr; Back 7 days</button>
+      <button class="nav-btn today" onclick="goToday()">Today</button>
+      <button class="nav-btn" onclick="changeWeek(1)">Next 7 days &rarr;</button>
     </div>
   </div>
   <div class="legend" id="legend"></div>
@@ -313,6 +332,8 @@ let unmatchedShifts = [];
 let logs = [];
 let lastSyncedAt = null;
 let lastPollOk = true;
+let clockStatus = {};   // {name: {status:'on'} | {status:'off', off_at:'HH:MM'}} from Deputy timesheets
+let focusedDay = null;  // dateKey of the day expanded to full width, or null for the 7-day grid
 
 const CATEGORY_MAP = {
   load:{color:'blue',label:'Bump In'}, strike:{color:'red',label:'Bump Out'},
@@ -332,6 +353,7 @@ async function pollState(){
     unmatchedShifts = data.unmatchedShifts || [];
     logs = data.logs || [];
     lastSyncedAt = data.lastSyncedAt;
+    clockStatus = data.clockStatus || {};
     lastPollOk = true;
   }catch(err){
     lastPollOk = false;
@@ -368,14 +390,17 @@ async function postJSON(url, body){
 
 /* ---------- WEEK NAVIGATION ---------- */
 let weekOffset = 0;
-function getMonday(d){ const date=new Date(d); const day=date.getDay(); date.setDate(date.getDate()+(day===0?-6:1-day)); date.setHours(0,0,0,0); return date; }
-function currentWeekDates(){ const base=getMonday(new Date()); base.setDate(base.getDate()+weekOffset*7); const days=[]; for(let i=0;i<7;i++){const d=new Date(base); d.setDate(d.getDate()+i); days.push(d);} return days; }
+/* Rolling window: today is always the first column, finished days fall away.
+   Prev/next move the window in 7-day steps. */
+function currentWeekDates(){ const base=new Date(); base.setHours(0,0,0,0); base.setDate(base.getDate()+weekOffset*7); const days=[]; for(let i=0;i<7;i++){const d=new Date(base); d.setDate(d.getDate()+i); days.push(d);} return days; }
 function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fmtDayLabel(d){ return d.toLocaleDateString('en-AU',{weekday:'short'}); }
 function fmtDateLabel(d){ return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'}); }
 function todayKey(){ return dateKey(new Date()); }
-function changeWeek(delta){ weekOffset += delta; renderAll(); }
-function goToday(){ weekOffset = 0; renderAll(); }
+function changeWeek(delta){ weekOffset += delta; focusedDay = null; renderAll(); }
+function goToday(){ weekOffset = 0; focusedDay = null; renderAll(); }
+function focusDay(key){ focusedDay = (focusedDay===key ? null : key); renderAll(); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && focusedDay){ focusedDay=null; renderAll(); } });
 
 /* ---------- CUE STRIP ---------- */
 function renderCueStrip(){
@@ -423,14 +448,53 @@ function renderLegend(){
   `).join('');
 }
 
+/* ---------- CARD STAFF CHIPS ----------
+   Cage cards show only the people techs actually need: Senior Technicians
+   (amber) and the FOH Manager (blue), plus producer-added manual assignments.
+   The rest of the auto-matched crew stays visible in the producer console.
+   On today's cards, whoever is on duty right now is highlighted; seniors/FOHMs
+   on earlier or later shifts appear dimmed, with their handover time. */
+function chipLabel(person, dimReason){
+  const rolePart = person.role==='fohm' ? ' · FOHM' : '';
+  return `${person.name}${rolePart}${dimReason||''}`;
+}
+function staffChips(c){
+  const staff = c.staff || [];
+  const isToday = c.date === todayKey();
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const show = staff.filter(p => p.role==='senior' || p.role==='fohm' || p.source==='manual');
+
+  const chips = show.map(p=>{
+    const cls = p.role==='senior' ? 'chip-senior' : (p.role==='fohm' ? 'chip-fohm' : '');
+    const s = toMin(p.start), e = toMin(p.end);
+    let dim = false, note = '';
+    if(isToday && s!==null && e!==null){
+      const off = clockStatus[p.name];
+      if(off && off.status==='off'){ dim = true; note = ` · left ${off.off_at}`; }
+      else if(nowMin < s){ dim = true; note = ` · from ${p.start}`; }
+      else if(nowMin >= e){ dim = true; note = ` · until ${p.end}`; }
+    }
+    return { html:`<span class="chip ${cls} ${dim?'off-duty':''}">${chipLabel(p, note)}</span>`, dim };
+  });
+  chips.sort((a,b)=>(a.dim?1:0)-(b.dim?1:0));   // on-duty first, handovers underneath
+  return chips.map(x=>x.html).join('');
+}
+
 /* ---------- WEEK GRID ---------- */
 function renderWeekGrid(){
   const days = currentWeekDates();
-  document.getElementById('weekTitle').textContent =
-    'Week of ' + fmtDateLabel(days[0]) + ' – ' + fmtDateLabel(days[6]) + ', ' + days[0].getFullYear();
+  const titleRange = fmtDateLabel(days[0]) + ' – ' + fmtDateLabel(days[6]) + ', ' + days[6].getFullYear();
+  const focusedDate = focusedDay ? days.find(d=>dateKey(d)===focusedDay) : null;
+  document.getElementById('weekTitle').innerHTML = focusedDate
+    ? `${focusedDate.toLocaleDateString('en-AU',{weekday:'long'})} ${fmtDateLabel(focusedDate)}<span class="focus-hint">double-click (or Esc) to go back to all days</span>`
+    : `${titleRange}<span class="focus-hint">double-click a day to expand it</span>`;
 
   const grid = document.getElementById('weekGrid');
-  grid.innerHTML = days.map(d=>{
+  grid.classList.toggle('focused', !!focusedDay);
+  const visibleDays = focusedDay ? days.filter(d=>dateKey(d)===focusedDay) : days;
+
+  grid.innerHTML = visibleDays.map(d=>{
     const key = dateKey(d);
     const dayCards = cards.filter(c=>c.date===key).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
     const cardsHtml = dayCards.length ? dayCards.map(c=>{
@@ -442,14 +506,13 @@ function renderWeekGrid(){
           <div class="ev-meta ${c.locationLabel==='Multiple — TBC'?'tbc':''}">${c.locationLabel}${c.pax?' · Est. '+c.pax+' att.':''}</div>
           <div class="tech-chips">
             ${c.isManual?'<span class="chip manual-tag">Manual</span>':''}
-            ${c.techsAuto.map(t=>`<span class="chip chip-auto">${t} · Deputy</span>`).join('')}
-            ${c.techsManual.map(t=>`<span class="chip">${t}</span>`).join('')}
+            ${staffChips(c)}
           </div>
         </div>
       `;
     }).join('') : `<div class="empty-day">No activity scheduled</div>`;
     return `
-      <div class="day-col ${key===todayKey()?'is-today':''}">
+      <div class="day-col ${key===todayKey()?'is-today':''} ${key===focusedDay?'day-focus':''}" ondblclick="focusDay('${key}')" title="${focusedDay?'Double-click to go back to all days':'Double-click to expand this day'}">
         <div class="day-head"><div class="dname">${fmtDayLabel(d)}</div><div class="ddate">${fmtDateLabel(d)}</div></div>
         <div class="day-body">${cardsHtml}</div>
       </div>
@@ -459,30 +522,41 @@ function renderWeekGrid(){
 
 /* ---------- ON NOW / ON LATER ---------- */
 function toMin(t){ if(!t) return null; const p=t.split(':'); return (+p[0])*60+(+p[1]||0); }
+function roleTag(role){ return role==='senior' ? 'Senior · ' : (role==='fohm' ? 'FOHM · ' : ''); }
 function renderTechPresence(){
   const tKey = todayKey();
   const now = new Date();
   const nowMin = now.getHours()*60+now.getMinutes();
   const todaysCards = cards.filter(c=>c.date===tKey);
 
-  const onNow=[], onLater=[];
+  /* A person counts as "on now" when their own rostered shift covers the
+     current time AND Deputy timesheets don't say they've already clocked off.
+     (Staff without recorded shift times — e.g. manual assignments — fall back
+     to the card's times, as before.) */
+  const onNow=[], onLater=[], seenNow=new Set(), seenLater=new Set();
   todaysCards.forEach(c=>{
-    const techs = [...c.techsAuto, ...c.techsManual];
-    if(!techs.length) return;
-    const s=toMin(c.start), e=toMin(c.end);
-    techs.forEach(t=>{
-      if(s!==null && e!==null && s<=nowMin && nowMin<e) onNow.push({tech:t,card:c});
-      else if(s!==null && s>nowMin) onLater.push({tech:t,card:c});
+    (c.staff||[]).forEach(p=>{
+      const s = toMin(p.start)!==null ? toMin(p.start) : toMin(c.start);
+      const e = toMin(p.end)!==null ? toMin(p.end)  : toMin(c.end);
+      if(s===null || e===null) return;
+      const clock = clockStatus[p.name];
+      const clockedOff = clock && clock.status==='off' && toMin(clock.off_at)!==null && toMin(clock.off_at)<=nowMin;
+      if(s<=nowMin && nowMin<e && !clockedOff){
+        if(!seenNow.has(p.name+'|'+c.id)){ seenNow.add(p.name+'|'+c.id); onNow.push({p, card:c}); }
+      } else if(s>nowMin){
+        if(!seenLater.has(p.name+'|'+c.id)){ seenLater.add(p.name+'|'+c.id); onLater.push({p, card:c, startMin:s}); }
+      }
     });
   });
+  onLater.sort((a,b)=>a.startMin-b.startMin);
 
   document.getElementById('onNowList').innerHTML = onNow.length ? onNow.map(x=>`
-    <div class="tech-row"><span class="tech-name">${x.tech}</span><span class="tech-detail">${x.card.locationLabel}</span></div>
-  `).join('') : '<div class="tech-detail">No techs assigned to a current activity yet</div>';
+    <div class="tech-row"><span class="tech-name">${x.p.name}</span><span class="tech-detail">${roleTag(x.p.role)}${x.card.locationLabel}${x.p.end?' · until '+x.p.end:''}</span></div>
+  `).join('') : '<div class="tech-detail">No one rostered on right now</div>';
 
   document.getElementById('onLaterList').innerHTML = onLater.length ? onLater.map(x=>`
-    <div class="tech-row"><span class="tech-name">${x.tech}</span><span class="tech-detail">${x.card.start} · ${x.card.locationLabel}</span></div>
-  `).join('') : '<div class="tech-detail">No techs assigned to a later activity today</div>';
+    <div class="tech-row"><span class="tech-name">${x.p.name}</span><span class="tech-detail">${roleTag(x.p.role)}from ${x.p.start||x.card.start} · ${x.card.locationLabel}</span></div>
+  `).join('') : '<div class="tech-detail">No one rostered on later today</div>';
 }
 
 /* ---------- TASKS ---------- */
@@ -604,9 +678,11 @@ function renderConsoleCardList(){
             <button class="btn btn-sm btn-secondary" onclick="addTechToCard('${c.id}')">Assign</button>
           </div>
           <div class="tech-chips" style="margin-top:6px;">
-            ${c.techsAuto.map(t=>`<span class="chip chip-auto">${t} · Deputy</span>`).join('')}
-            ${c.techsManual.map(t=>`<span class="chip">${t}</span>`).join('')}
-            ${(!c.techsAuto.length && !c.techsManual.length) ? '<span class="tech-detail">No techs assigned yet</span>' : ''}
+            ${(c.staff||[]).map(p=>{
+              const cls = p.role==='senior' ? 'chip-senior' : (p.role==='fohm' ? 'chip-fohm' : (p.source==='deputy' ? 'chip-auto' : ''));
+              return `<span class="chip ${cls}">${p.name}${p.role==='fohm'?' · FOHM':''}</span>`;
+            }).join('')}
+            ${(!(c.staff||[]).length) ? '<span class="tech-detail">No techs assigned yet</span>' : ''}
           </div>
         </div>
       `;

@@ -166,7 +166,9 @@ def api_state():
     # Python. (Previously this ran one query per card — fine on a local SQLite
     # file, but ~144 network round-trips to a cloud database, which timed out.)
     techs_by_card = {}
-    for t in db.execute("SELECT card_id, tech_name, source FROM tech_assignments"):
+    for t in db.execute(
+        "SELECT card_id, tech_name, source, role, shift_start, shift_end FROM tech_assignments"
+    ):
         techs_by_card.setdefault(t["card_id"], []).append(t)
 
     cards = []
@@ -188,6 +190,18 @@ def api_state():
         techs = techs_by_card.get(card["id"], [])
         card["techsAuto"] = [t["tech_name"] for t in techs if t["source"] == "deputy"]
         card["techsManual"] = [t["tech_name"] for t in techs if t["source"] == "manual" and t["tech_name"] not in card["techsAuto"]]
+        # Full staff detail: role ('senior'/'fohm'/'tech') + rostered shift times,
+        # so the frontend can show seniors/FOHMs and work out who's on duty now.
+        seen_names = set()
+        card["staff"] = []
+        for t in techs:
+            if t["tech_name"] in seen_names:
+                continue
+            seen_names.add(t["tech_name"])
+            card["staff"].append({
+                "name": t["tech_name"], "role": t["role"] or "tech",
+                "source": t["source"], "start": t["shift_start"], "end": t["shift_end"],
+            })
         cards.append(card)
 
     tasks = [dict(r) for r in db.execute("SELECT * FROM tasks ORDER BY id DESC")]
@@ -203,12 +217,19 @@ def api_state():
     meta_row = db.execute("SELECT value FROM meta WHERE key = 'last_synced_at'").fetchone()
     last_synced_at = meta_row["value"] if meta_row else None
 
+    clock_row = db.execute("SELECT value FROM meta WHERE key = 'clock_status'").fetchone()
+    try:
+        clock_status = json.loads(clock_row["value"]) if clock_row else {}
+    except (ValueError, TypeError):
+        clock_status = {}
+
     return jsonify({
         "cards": cards,
         "tasks": tasks,
         "unmatchedShifts": unmatched,
         "logs": logs,
         "lastSyncedAt": last_synced_at,
+        "clockStatus": clock_status,
     })
 
 
@@ -323,8 +344,9 @@ def api_resolve_unmatched(shift_id):
     if not shift:
         return jsonify({"error": "unknown shiftId"}), 404
     db.execute(
-        "INSERT INTO tech_assignments (card_id, tech_name, source, assigned_at) VALUES (%s, %s, 'manual', %s) ON CONFLICT DO NOTHING",
-        (card_id, shift["employee"], now_iso()),
+        "INSERT INTO tech_assignments (card_id, tech_name, source, assigned_at, role, shift_start, shift_end) "
+        "VALUES (%s, %s, 'manual', %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (card_id, shift["employee"], now_iso(), shift["role"] or "tech", shift["start"], shift["end"]),
     )
     db.execute("UPDATE unmatched_shifts SET resolved = 1 WHERE shift_id = %s", (shift_id,))
     log(db, f"Manually linked {shift['employee']}'s shift to a card")
