@@ -656,27 +656,16 @@ def shift_id_for(shift):
 def normalize_name(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
-# Shift-note shorthand -> Smartsheet project name. Deputy notes use crew
-# shorthand ("TT - Markets") that never contains the full project name, so
-# these aliases bridge the gap. An alias only applies if its target project
-# actually exists in the current Smartsheet pull (so a typo here can't invent
-# assignments). Extend via the PROJECT_NOTE_ALIASES_JSON env var.
-PROJECT_NOTE_ALIASES = {"markets": "CW Farmers Market"}
-try:
-    PROJECT_NOTE_ALIASES.update(json.loads(os.environ.get("PROJECT_NOTE_ALIASES_JSON", "{}")))
-except ValueError:
-    print("  WARNING: PROJECT_NOTE_ALIASES_JSON is not valid JSON — ignoring it")
-
-
 def find_project_in_note(note, known_projects):
-    """Pass 0: alias shorthand. Pass 1: substring containment against the known
-    Smartsheet project list. Pass 2: fuzzy token overlap."""
+    """Pass 1: substring containment against the known Smartsheet project list.
+    Pass 2: fuzzy token overlap.
+
+    NOTE (decision by Michael, July 2026): no shorthand/alias matching. Notes
+    like "ST - Markets" deliberately do NOT match "CW Farmers Market" — the
+    word could equally mean another event (e.g. Big Design Market), and a
+    silently wrong assignment is worse than an honest review-queue entry.
+    The fix is at the source: rosterers put the full event name in the note."""
     norm_note = normalize_name(note)
-    for alias, target in PROJECT_NOTE_ALIASES.items():
-        if normalize_name(alias) in norm_note:
-            for proj in known_projects:
-                if normalize_name(proj) == normalize_name(target):
-                    return proj, "high"
     for proj in known_projects:
         if normalize_name(proj) in norm_note:
             return proj, "high"
