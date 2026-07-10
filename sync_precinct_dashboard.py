@@ -579,12 +579,19 @@ def fetch_deputy_shifts(start_date, end_date, unit_roles, employees):
         else:
             name = employees.get(raw_employee, f"Employee #{raw_employee}")
         date_field = item.get("Date") or ""
+        note = item.get("Comment") or item.get("ShiftNote") or ""
+        # Crew convention (confirmed with Michael): a shift note starting with
+        # "ST" marks that person as the Senior Technician for that shift, even
+        # when they're rostered under a regular tech location. Seniority is
+        # per-shift — the same person can be "TT" one day and "ST" the next.
+        if role == "tech" and re.match(r"\s*st\s*[-–—:]", note, re.IGNORECASE):
+            role = "senior"
         shifts.append({
             "employee": name,
             "date": date_field[:10] if date_field else None,
             "start": unix_to_local_hhmm(item.get("StartTime"), date_field),
             "end": unix_to_local_hhmm(item.get("EndTime"), date_field),
-            "note": item.get("Comment") or item.get("ShiftNote") or "",
+            "note": note,
             "role": role,
         })
     return shifts
