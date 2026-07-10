@@ -153,6 +153,19 @@ def write_to_database(cards, tech_assignments, unmatched, generated_at, clock_st
                 -- deliberately NOT resetting `resolved` — a producer's manual link survives resync
         """, u)
 
+    # Housekeeping: clear review-queue entries that are no longer live —
+    # shifts that now auto-match (e.g. after an alias fix), changed in Deputy,
+    # or fell out of the lookahead window. Producer-resolved rows (resolved=1)
+    # are never touched.
+    current_ids = {u["shift_id"] for u in unmatched}
+    stale = [r["shift_id"] for r in conn.execute(
+        "SELECT shift_id FROM unmatched_shifts WHERE resolved = 0"
+    ).fetchall() if r["shift_id"] not in current_ids]
+    for sid in stale:
+        conn.execute("DELETE FROM unmatched_shifts WHERE shift_id = %s", (sid,))
+    if stale:
+        print(f"  Cleared {len(stale)} stale entr{'y' if len(stale)==1 else 'ies'} from the review queue")
+
     conn.execute(
         "INSERT INTO meta (key, value) VALUES ('last_synced_at', %s) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -636,9 +649,27 @@ def shift_id_for(shift):
 def normalize_name(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
+# Shift-note shorthand -> Smartsheet project name. Deputy notes use crew
+# shorthand ("TT - Markets") that never contains the full project name, so
+# these aliases bridge the gap. An alias only applies if its target project
+# actually exists in the current Smartsheet pull (so a typo here can't invent
+# assignments). Extend via the PROJECT_NOTE_ALIASES_JSON env var.
+PROJECT_NOTE_ALIASES = {"markets": "CW Farmers Market"}
+try:
+    PROJECT_NOTE_ALIASES.update(json.loads(os.environ.get("PROJECT_NOTE_ALIASES_JSON", "{}")))
+except ValueError:
+    print("  WARNING: PROJECT_NOTE_ALIASES_JSON is not valid JSON — ignoring it")
+
+
 def find_project_in_note(note, known_projects):
-    """Pass 1: substring containment against the known Smartsheet project list."""
+    """Pass 0: alias shorthand. Pass 1: substring containment against the known
+    Smartsheet project list. Pass 2: fuzzy token overlap."""
     norm_note = normalize_name(note)
+    for alias, target in PROJECT_NOTE_ALIASES.items():
+        if normalize_name(alias) in norm_note:
+            for proj in known_projects:
+                if normalize_name(proj) == normalize_name(target):
+                    return proj, "high"
     for proj in known_projects:
         if normalize_name(proj) in norm_note:
             return proj, "high"
