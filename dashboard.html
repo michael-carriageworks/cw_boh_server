@@ -102,6 +102,7 @@
   .chip.chip-fohm{background:rgba(96,165,250,0.14);color:#93c5fd;border-color:rgba(96,165,250,0.45);font-weight:600;}
   .chip.off-duty{opacity:0.42;font-weight:400;}
   .empty-day{color:var(--text-3);font-size:11px;padding:12px;font-style:italic;}
+  .no-crew{font-size:10px;color:var(--text-3);font-style:italic;padding:2px 0;}
 
   /* ---- Focused single-day view (double-click a day) ---- */
   .week-grid.focused{grid-template-columns:1fr;}
@@ -479,6 +480,13 @@ function chipLabel(person, dimReason){
   const rolePart = person.role==='fohm' ? ' · FOHM' : '';
   return `${person.name}${rolePart}${dimReason||''}`;
 }
+/* Overnight-aware "is this time inside the shift window": a shift like
+   20:00-01:00 crosses midnight, so its end wraps to the next day. */
+function inShiftWindow(nowMin, s, e){
+  if(s===null || e===null) return false;
+  if(e<=s) e += 1440;
+  return (s<=nowMin && nowMin<e) || (s<=nowMin+1440 && nowMin+1440<e);
+}
 function staffChips(c){
   const staff = c.staff || [];
   const isToday = c.date === todayKey();
@@ -493,8 +501,9 @@ function staffChips(c){
     if(isToday && s!==null && e!==null){
       const off = clockStatus[p.name];
       if(off && off.status==='off'){ dim = true; }              // clocked off — dim, no time text
+      else if(inShiftWindow(nowMin, s, e)){ /* on duty — bright */ }
       else if(nowMin < s){ dim = true; note = ` · from ${p.start}`; }  // taking over later
-      else if(nowMin >= e){ dim = true; }                        // shift finished — dim, no time text
+      else { dim = true; }                                       // shift finished — dim, no time text
     }
     return { html:`<span class="chip ${cls} ${dim?'off-duty':''}">${chipLabel(p, note)}</span>`, dim };
   });
@@ -525,13 +534,14 @@ function renderWeekGrid(){
       const isPast = key===todayKey() && toMin(c.end)!==null && toMin(c.end)<=nowM;
       return `
         <div class="event-card cat-${c.category.key} ${c.isManual?'is-manual':''} ${isPast?'is-past':''}">
-          <div class="ev-time">${c.start||'—'} – ${c.end||'—'}</div>
+          <div class="ev-time">${(!c.start && !c.end) ? 'Time TBC' : (c.start||'—')+' – '+(c.end||'—')}</div>
           <div class="ev-title">${c.project}${c.needsReview?' <span style="color:var(--amber-strong);font-size:10px;">(check)</span>':''}</div>
           <div class="ev-cat-badge">${c.category.label}</div>
           <div class="ev-meta ${c.locationLabel==='Multiple — TBC'?'tbc':''}">${c.locationLabel}${c.pax?' · Est. '+c.pax+' att.':''}</div>
           <div class="tech-chips">
             ${c.isManual?'<span class="chip manual-tag">Manual</span>':''}
             ${staffChips(c)}
+            ${(c.staff||[]).length ? '' : '<span class="no-crew">No crew rostered</span>'}
           </div>
         </div>
       `;
@@ -567,7 +577,7 @@ function renderTechPresence(){
       if(s===null || e===null) return;
       const clock = clockStatus[p.name];
       const clockedOff = clock && clock.status==='off' && toMin(clock.off_at)!==null && toMin(clock.off_at)<=nowMin;
-      if(s<=nowMin && nowMin<e && !clockedOff){
+      if(inShiftWindow(nowMin, s, e) && !clockedOff){
         if(!seenNow.has(p.name+'|'+c.id)){ seenNow.add(p.name+'|'+c.id); onNow.push({p, card:c}); }
       } else if(s>nowMin){
         if(!seenLater.has(p.name+'|'+c.id)){ seenLater.add(p.name+'|'+c.id); onLater.push({p, card:c, startMin:s}); }

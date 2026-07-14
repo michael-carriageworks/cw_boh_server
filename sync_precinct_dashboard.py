@@ -574,6 +574,8 @@ def fetch_deputy_shifts(start_date, end_date, unit_roles, employees):
         if role is None:
             continue
         raw_employee = item.get("Employee")
+        if not raw_employee:
+            continue  # an OPEN shift — a slot with no one assigned to it yet
         if isinstance(raw_employee, dict):
             name = raw_employee.get("DisplayName") or raw_employee.get("Name") or "Unknown"
         else:
@@ -717,15 +719,22 @@ def match_shifts_to_cards(shifts, cards, known_projects):
             continue
 
         s_start, s_end = to_minutes(shift["start"]), to_minutes(shift["end"])
+        if s_start is not None and s_end is not None and s_end <= s_start:
+            s_end += 1440  # overnight shift (e.g. bump-out 20:00-01:00) crosses midnight
         matched_any = False
         for card in candidates:
             c_start, c_end = to_minutes(card["start"]), to_minutes(card["end"])
+            if c_start is not None and c_end is not None and c_end <= c_start:
+                c_end += 1440  # overnight event
+            card_has_times = c_start is not None and c_end is not None
             overlaps = (
                 s_start is not None and s_end is not None and
-                c_start is not None and c_end is not None and
+                card_has_times and
                 s_start < c_end and s_end > c_start
             )
-            if overlaps or confidence == "medium":
+            # A card with no times in Smartsheet can never pass an overlap test,
+            # so a confident project+date match is enough to assign to it.
+            if overlaps or confidence == "medium" or not card_has_times:
                 assigned = tech_assignments.setdefault(card["id"], [])
                 if not any(a["name"] == shift["employee"] for a in assigned):
                     assigned.append({
