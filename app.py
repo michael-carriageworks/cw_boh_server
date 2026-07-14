@@ -65,12 +65,37 @@ def log(db, text):
 # (as Vercel environment variables), so deploying this code changes nothing
 # until you set them — no risk of locking yourself out. SECRET_KEY signs the
 # "you're logged in" cookie; it must be a stable random value in the cloud.
+#
+# Two logins, two roles:
+#   DASHBOARD_USER/PASSWORD               -> 'producer' (full access — the
+#                                            original login keeps working)
+#   DASHBOARD_VIEWER_USER/VIEWER_PASSWORD -> 'viewer' (techs + cage screen:
+#                                            sees everything, can't edit)
+# The viewer pair is optional; until it's set there is simply no viewer login.
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-change-me")
 app.permanent_session_lifetime = timedelta(days=30)  # stay signed in for 30 days
 
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+DASHBOARD_VIEWER_USER = os.environ.get("DASHBOARD_VIEWER_USER", "")
+DASHBOARD_VIEWER_PASSWORD = os.environ.get("DASHBOARD_VIEWER_PASSWORD", "")
 LOGIN_ENABLED = bool(DASHBOARD_USER and DASHBOARD_PASSWORD)
+
+
+def current_role():
+    """'producer' or 'viewer'. Sessions created before roles existed belonged
+    to the only login that existed then — the producer one."""
+    if not LOGIN_ENABLED:
+        return "producer"
+    return session.get("role", "producer")
+
+
+def require_producer():
+    """Server-side gate for editing actions. Hiding the console tab in the UI
+    is cosmetic — this is the check that actually enforces it."""
+    if LOGIN_ENABLED and current_role() != "producer":
+        return jsonify({"error": "This action needs the producer login"}), 403
+    return None
 
 LOGIN_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -126,10 +151,18 @@ def login():
     if request.method == "POST":
         u = request.form.get("username", "")
         pw = request.form.get("password", "")
-        # constant-time comparison, so response timing can't leak the password
+        # constant-time comparisons, so response timing can't leak the password
+        role = None
         if hmac.compare_digest(u, DASHBOARD_USER) and hmac.compare_digest(pw, DASHBOARD_PASSWORD):
+            role = "producer"
+        elif (DASHBOARD_VIEWER_USER and DASHBOARD_VIEWER_PASSWORD
+              and hmac.compare_digest(u, DASHBOARD_VIEWER_USER)
+              and hmac.compare_digest(pw, DASHBOARD_VIEWER_PASSWORD)):
+            role = "viewer"
+        if role:
             session.permanent = True
             session["authed"] = True
+            session["role"] = role
             return redirect("/")
         error = "Incorrect username or password."
     return render_template_string(LOGIN_PAGE, error=error)
@@ -230,6 +263,7 @@ def api_state():
         "logs": logs,
         "lastSyncedAt": last_synced_at,
         "clockStatus": clock_status,
+        "role": current_role(),
     })
 
 
@@ -238,6 +272,9 @@ def api_state():
 # ============================================================
 @app.route("/api/tech-assignment", methods=["POST"])
 def api_tech_assignment():
+    gate = require_producer()
+    if gate:
+        return gate
     data = request.get_json(force=True)
     card_id, tech_name = data.get("cardId"), (data.get("techName") or "").strip()
     if not card_id or not tech_name:
@@ -257,6 +294,9 @@ def api_tech_assignment():
 
 @app.route("/api/location", methods=["POST"])
 def api_location():
+    gate = require_producer()
+    if gate:
+        return gate
     data = request.get_json(force=True)
     card_id, location = data.get("cardId"), data.get("location")
     if not card_id or not location:
@@ -270,6 +310,9 @@ def api_location():
 
 @app.route("/api/manual-event", methods=["POST"])
 def api_manual_event():
+    gate = require_producer()
+    if gate:
+        return gate
     data = request.get_json(force=True)
     title = (data.get("title") or "").strip()
     if not title:
@@ -299,6 +342,9 @@ def api_manual_event():
 
 @app.route("/api/task", methods=["POST"])
 def api_task():
+    gate = require_producer()
+    if gate:
+        return gate
     data = request.get_json(force=True)
     title = (data.get("title") or "").strip()
     if not title:
@@ -335,6 +381,9 @@ def api_task_toggle(task_id):
 
 @app.route("/api/unmatched/<shift_id>/resolve", methods=["POST"])
 def api_resolve_unmatched(shift_id):
+    gate = require_producer()
+    if gate:
+        return gate
     data = request.get_json(force=True)
     card_id = data.get("cardId")
     if not card_id:

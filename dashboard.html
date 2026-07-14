@@ -355,6 +355,7 @@ async function pollState(){
     logs = data.logs || [];
     lastSyncedAt = data.lastSyncedAt;
     clockStatus = data.clockStatus || {};
+    applyRole(data.role || 'producer');
     lastPollOk = true;
   }catch(err){
     lastPollOk = false;
@@ -417,6 +418,25 @@ function renderCueStrip(){
   `;
 }
 setInterval(renderCueStrip,1000); renderCueStrip();
+
+/* ---------- ROLE: viewers (tech/cage login) never see the producer console.
+   The real enforcement is server-side (edit actions 403 for viewers) — this
+   just removes the tab so the UI matches what the login can actually do. */
+let userRole = 'producer';
+function applyRole(role){
+  if(role === userRole) return;
+  userRole = role;
+  const consoleBtn = document.querySelector('.tab-btn[data-view="console"]');
+  if(!consoleBtn) return;
+  if(role !== 'producer'){
+    consoleBtn.style.display = 'none';
+    if(consoleBtn.classList.contains('active')){  // kicked out of a view they can't use
+      document.querySelector('.tab-btn[data-view="cage"]').click();
+    }
+  } else {
+    consoleBtn.style.display = '';
+  }
+}
 
 /* ---------- TABS ---------- */
 document.querySelectorAll('.tab-btn').forEach(btn=>{
