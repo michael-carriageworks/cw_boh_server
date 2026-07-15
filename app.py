@@ -308,36 +308,9 @@ def api_location():
     return jsonify({"ok": True})
 
 
-@app.route("/api/manual-event", methods=["POST"])
-def api_manual_event():
-    gate = require_producer()
-    if gate:
-        return gate
-    data = request.get_json(force=True)
-    title = (data.get("title") or "").strip()
-    if not title:
-        return jsonify({"error": "title required"}), 400
-    day = data["day"]
-    cat_key = data.get("category", "other")
-    cat_labels = {"load": "Bump In", "strike": "Bump Out", "rehearsal": "Rehearsal",
-                  "show": "Event", "facilities": "Cleaning Team Onsite", "other": "Other"}
-    cat_colors = {"load": "blue", "strike": "red", "rehearsal": "purple",
-                  "show": "amber", "facilities": "slate", "other": "grey"}
-    location = data.get("location") or "TBC"
-    card_id = f"manual__{day}__{title.lower().replace(' ', '-')}__{int(datetime.now().timestamp())}"
-
-    db = get_db()
-    db.execute("""
-        INSERT INTO cards (id, project, subproject, date, start, "end", activity_label,
-                            category_key, category_label, category_color, pax, notes,
-                            location_options, resolved_location, is_manual, needs_review)
-        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, 1, 0)
-    """, (card_id, title, day, data.get("start"), data.get("end"), cat_labels.get(cat_key, "Other"),
-          cat_key, cat_labels.get(cat_key, "Other"), cat_colors.get(cat_key, "grey"),
-          json.dumps([location]), location))
-    log(db, f'Manual event added: "{title}"')
-    db.commit()
-    return jsonify({"ok": True, "cardId": card_id})
+# NOTE: the "add manual event" feature was removed at Michael's request
+# (July 2026) — all events come from Smartsheet. Existing is_manual cards in
+# the database are still preserved and displayed if any exist.
 
 
 @app.route("/api/task", methods=["POST"])

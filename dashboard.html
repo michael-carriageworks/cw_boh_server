@@ -184,9 +184,6 @@
   .btn-secondary{background:var(--bg-3);color:var(--text-1);border:1px solid var(--line);}
   .btn-secondary:hover{background:var(--bg-2);}
 
-  details.manual-add{margin-top:6px;}
-  details.manual-add summary{cursor:pointer;font-size:12.5px;color:var(--text-2);padding:6px 0;}
-  details.manual-add summary:hover{color:var(--text-1);}
 
   .console-day-group{margin-bottom:14px;}
   .console-day-title{font-family:var(--font-display);font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:var(--amber-strong);padding:6px 0;border-bottom:1px solid var(--line);margin-bottom:8px;}
@@ -239,7 +236,7 @@
 
 <div class="tabbar">
   <div class="tabbar-left">
-    <button class="tab-btn active" data-view="cage">Cage display</button>
+    <button class="tab-btn active" data-view="cage">BOH Dashboard</button>
     <button class="tab-btn" data-view="console">Producer console</button>
   </div>
 </div>
@@ -277,29 +274,6 @@
       <div class="panel">
         <h2>Assign techs &amp; resolve locations — same week as cage display</h2>
         <div class="console-scroll" id="consoleCardList"></div>
-        <details class="manual-add">
-          <summary>+ Add a manual event (not from Smartsheet)</summary>
-          <label>Day</label>
-          <select id="man-day"></select>
-          <label>Event / activity name</label>
-          <input type="text" id="man-title" placeholder="e.g. Unscheduled AV check">
-          <div class="row2">
-            <div><label>Start</label><input type="time" id="man-start" value="09:00"></div>
-            <div><label>Finish</label><input type="time" id="man-finish" value="10:00"></div>
-          </div>
-          <label>Category</label>
-          <select id="man-cat">
-            <option value="load">Load / Bump in</option>
-            <option value="strike">Strike / Bump out</option>
-            <option value="rehearsal">Rehearsal</option>
-            <option value="show" selected>Show / Performance / Event</option>
-            <option value="facilities">Facilities</option>
-            <option value="other">Other</option>
-          </select>
-          <label>Location</label>
-          <input type="text" id="man-location" placeholder="e.g. Bay 17">
-          <button class="btn btn-sm" onclick="addManualEvent()">Add manual event</button>
-        </details>
       </div>
     </div>
 
@@ -356,12 +330,6 @@ let lastSyncedAt = null;
 let lastPollOk = true;
 let clockStatus = {};   // {name: {status:'on'} | {status:'off', off_at:'HH:MM'}} from Deputy timesheets
 let focusedDay = null;  // dateKey of the day expanded to full width, or null for the 7-day grid
-
-const CATEGORY_MAP = {
-  load:{color:'blue',label:'Bump In'}, strike:{color:'red',label:'Bump Out'},
-  rehearsal:{color:'purple',label:'Rehearsal'}, show:{color:'amber',label:'Event'},
-  facilities:{color:'slate',label:'Cleaning Team Onsite'}, other:{color:'grey',label:'Other'},
-};
 
 /* ---------- POLLING ---------- */
 async function pollState(){
@@ -759,7 +727,7 @@ function renderUnmatched(){
   const el = document.getElementById('unmatchedList');
   if(!unmatchedShifts.length){ el.innerHTML = '<div class="tech-detail">No unresolved Deputy shifts — everything matched cleanly.</div>'; return; }
   el.innerHTML = unmatchedShifts.map(s=>{
-    const sameDayCards = cards.filter(c=>c.date===s.date);
+    const sameDayCards = cards.filter(c=>c.date===s.date && c.category.key!=='maintenance');
     const options = sameDayCards.map(c=>`<option value="${c.id}">${c.project} — ${c.activity_label} (${c.start||'—'}–${c.end||'—'})</option>`).join('');
     return `
       <div class="unmatched-card">
@@ -787,9 +755,8 @@ async function resolveUnmatched(shiftId){
 function populateDaySelectors(){
   const days = currentWeekDates();
   const opts = days.map(d=>`<option value="${dateKey(d)}">${fmtDayLabel(d)} ${fmtDateLabel(d)}</option>`).join('');
-  const taskSel = document.getElementById('task-day'), manSel = document.getElementById('man-day');
+  const taskSel = document.getElementById('task-day');
   if(document.activeElement !== taskSel) taskSel.innerHTML = opts;
-  if(document.activeElement !== manSel) manSel.innerHTML = opts;
 }
 
 function renderConsoleCardList(){
@@ -802,6 +769,7 @@ function renderConsoleCardList(){
     if(!dayCards.length) return;
     html += `<div class="console-day-group"><div class="console-day-title">${fmtDayLabel(d)} ${fmtDateLabel(d)}</div>`;
     dayCards.forEach(c=>{
+      const isMaint = c.category.key==='maintenance';
       let locControl = '';
       if(c.locationOptions.length>1){
         locControl = `<select onchange="setLocation('${c.id}', this.value)">
@@ -811,27 +779,32 @@ function renderConsoleCardList(){
       } else {
         locControl = `<span class="assigned-chip">${c.locationLabel}</span>`;
       }
+      // Maintenance is handled by a separate team — no tech assignment on these.
+      const techControls = isMaint ? '' : `
+            <input type="text" id="tech-input-${c.id}" placeholder="Add tech name">
+            <button class="btn btn-sm btn-secondary" onclick="addTechToCard('${c.id}')">Assign</button>`;
+      const chipsHtml = isMaint ? '' : `
+          <div class="tech-chips" style="margin-top:6px;">
+            ${(c.staff||[]).map(p=>{
+              const cls = p.role==='senior' ? 'chip-senior' : (p.role==='fohm' ? 'chip-fohm' : (p.role==='rigger' ? 'chip-rigger' : (p.source==='deputy' ? 'chip-auto' : '')));
+              return `<span class="chip ${cls}">${p.name}${p.role==='fohm'?' · FOHM':(p.role==='rigger'?' · Rigger':'')}</span>`;
+            }).join('')}
+            ${(!(c.staff||[]).length) ? '<span class="tech-detail">No techs assigned yet</span>' : ''}
+          </div>`;
       html += `
         <div class="console-card">
           <div class="console-card-head">
             <div>
-              <div class="console-card-title">${c.project} — ${c.category.label}${c.isManual?' (manual)':''}</div>
+              <div class="console-card-title">${isMaint?'Maintenance — '+c.project:c.project+' — '+c.category.label}${c.isManual?' (manual)':''}</div>
               <div class="console-card-time">${c.start||'—'} – ${c.end||'—'}</div>
             </div>
             ${c.needsReview?'<span class="review-flag">Needs review</span>':''}
           </div>
           <div class="console-card-controls">
             ${locControl}
-            <input type="text" id="tech-input-${c.id}" placeholder="Add tech name">
-            <button class="btn btn-sm btn-secondary" onclick="addTechToCard('${c.id}')">Assign</button>
+            ${techControls}
           </div>
-          <div class="tech-chips" style="margin-top:6px;">
-            ${(c.staff||[]).map(p=>{
-              const cls = p.role==='senior' ? 'chip-senior' : (p.role==='fohm' ? 'chip-fohm' : (p.source==='deputy' ? 'chip-auto' : ''));
-              return `<span class="chip ${cls}">${p.name}${p.role==='fohm'?' · FOHM':''}</span>`;
-            }).join('')}
-            ${(!(c.staff||[]).length) ? '<span class="tech-detail">No techs assigned yet</span>' : ''}
-          </div>
+          ${chipsHtml}
         </div>
       `;
     });
@@ -856,23 +829,6 @@ async function addTechToCard(cardId){
 }
 
 /* ---------- FORM HANDLERS ---------- */
-async function addManualEvent(){
-  const title = document.getElementById('man-title').value.trim();
-  if(!title){ showToast('Enter an event name first'); return; }
-  await postJSON('/api/manual-event', {
-    day: document.getElementById('man-day').value,
-    title,
-    category: document.getElementById('man-cat').value,
-    location: document.getElementById('man-location').value.trim(),
-    start: document.getElementById('man-start').value,
-    end: document.getElementById('man-finish').value,
-  });
-  document.getElementById('man-title').value='';
-  document.getElementById('man-location').value='';
-  showToast('Manual event added');
-  pollState();
-}
-
 async function addTask(){
   const title = document.getElementById('task-title').value.trim();
   if(!title){ showToast('Enter a task first'); return; }
