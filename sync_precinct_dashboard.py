@@ -284,6 +284,7 @@ CATEGORY_MAP = {
     "opening night function":  {"key": "function",   "color": "gold",   "label": "Opening Night Function"},
     "shoot - with sound":      {"key": "shoot",       "color": "teal",   "label": "Shoot (Sound)"},
     "cleaning team onsite":    {"key": "facilities",  "color": "slate",  "label": "Cleaning Team Onsite"},
+    "maintenance":             {"key": "maintenance", "color": "slate",  "label": "Maintenance"},
     "open":                    {"key": "open",        "color": "slate",  "label": "Open"},
     "no activity":             {"key": "none",        "color": "dim",    "label": "No Activity"},
 }
@@ -395,6 +396,17 @@ def expand_row_to_cards(row, row_index):
 # ============================================================
 # SMARTSHEET FETCH (real REST API — separate from the Claude connector)
 # ============================================================
+def _norm_card_time(v):
+    """Normalise a Smartsheet time cell to HH:MM (handles '0700', '9.30',
+    '10:00'). Placeholder text people type for 'no time' becomes None."""
+    if v is None:
+        return None
+    v = str(v).strip()
+    if not v or v.upper() in {"NA", "N/A", "TBC", "TBA", "-", "—"}:
+        return None
+    return normalize_time_token(v)
+
+
 def fetch_smartsheet_report(report_id):
     url = f"https://api.smartsheet.com/2.0/reports/{report_id}"
     resp = requests.get(url, headers=SMARTSHEET_HEADERS, params={"pageSize": 10000})
@@ -424,8 +436,10 @@ def fetch_smartsheet_report(report_id):
             r[title] = cell.get("displayValue", cell.get("value"))
         rows.append({
             "project":    r.get("PROJECT"),
-            "start":      r.get("ACTIVITY START (00:00)"),
-            "end":        r.get("ACTIVITY END (00:00)"),
+            # Smartsheet time cells arrive in mixed formats ("10:00" but also
+            # "0700") — normalise to HH:MM so time maths works everywhere.
+            "start":      _norm_card_time(r.get("ACTIVITY START (00:00)")),
+            "end":        _norm_card_time(r.get("ACTIVITY END (00:00)")),
             "date":       r.get("DATE"),
             "subproject": r.get("SUB PROJECT NAME"),
             "activity":   r.get("ACTIVITY"),
@@ -513,9 +527,15 @@ def find_operational_unit_ids(target_names, units, label):
 
 
 def classify_role(location_name):
-    """'senior' for the Senior Technician role-location, 'tech' for the rest of
-    BOH. (FOHM locations are classified separately where they're looked up.)"""
-    return "senior" if "senior technician" in normalize_for_match(location_name) else "tech"
+    """'senior' for the Senior Technician role-location, 'rigger' for the
+    Rigger role-locations, 'tech' for the rest of BOH. (FOHM locations are
+    classified separately where they're looked up.)"""
+    n = normalize_for_match(location_name)
+    if "senior technician" in n:
+        return "senior"
+    if "rigger" in n:
+        return "rigger"
+    return "tech"
 
 
 def fetch_deputy_employees():
