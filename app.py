@@ -129,6 +129,40 @@ LOGIN_PAGE = """<!doctype html>
 </body></html>"""
 
 
+# ============================================================
+# MAINTENANCE LOCKDOWN — July 2026 GM safety review.
+# Set to False and redeploy to bring the dashboard back online.
+# ============================================================
+MAINTENANCE_MODE = True
+
+MAINTENANCE_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carriageworks BOH — Offline</title>
+<style>
+ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+      background:#0d0d0f;color:#e8e8ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+ .card{max-width:420px;text-align:center;padding:40px 28px;}
+ h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:#f2a02a;margin:0 0 12px;}
+ p{color:#9a9aa2;font-size:14.5px;line-height:1.6;margin:0;}
+</style></head><body>
+ <div class="card">
+   <h1>Carriageworks BOH</h1>
+   <p>The dashboard is temporarily offline while it undergoes an internal review.
+      It will be back soon — questions can be directed to Michael.</p>
+ </div>
+</body></html>"""
+
+
+@app.before_request
+def _maintenance_gate():
+    if not MAINTENANCE_MODE:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "dashboard temporarily offline"}), 503
+    return MAINTENANCE_PAGE, 503
+
+
 @app.before_request
 def _require_login():
     if not LOGIN_ENABLED:
